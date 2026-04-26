@@ -162,3 +162,6 @@ cython_debug/
 # FITS files -- Not committed due to redistribution concerns
 *.fit
 *.fits
+
+# IDE files
+.vscode/
