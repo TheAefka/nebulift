@@ -4,6 +4,7 @@ import numpy as np
 
 import mtolib.main as mto
 from mtolib.io_mto import read_fits_file
+from mtolib.postprocessing import get_image_parameters
 from mtolib import _ctype_classes as ct_classes
 
 def run_mto(
@@ -63,10 +64,15 @@ def run_mto(
     if write_parameters:
         mto.generate_parameters(image, id_map, sig_ancs, params)
 
+    # Mask NANs for parameter calculations
+    masked_image = np.ma.array(processed_image, mask=np.isnan(processed_image))
+
     return {
         'image': image,
         'processed_image': processed_image,
         'id_map': id_map,
         'sig_ancs': sig_ancs,
         'params': params,
+        'image_parameters': get_image_parameters(masked_image, id_map.ravel(),
+                                                 sig_ancs.ravel(), params),
     }
