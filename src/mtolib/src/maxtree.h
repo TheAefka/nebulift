@@ -35,6 +35,9 @@ typedef struct
 {
   FLOAT_TYPE volume;
   FLOAT_TYPE power;
+  FLOAT_TYPE len_major, len_minor;
+  INT_TYPE x, y;
+  LONG_TYPE xx, yy, xy;
 } mt_node_attributes;
 
 typedef struct

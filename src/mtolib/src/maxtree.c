@@ -1,6 +1,8 @@
 #include "maxtree.h"
 
 #include <assert.h>
+#include <math.h>
+#include <stdio.h>
 
 #define MT_INDEX_OF(PIXEL) ((PIXEL).location.y * mt->img.width + \
   (PIXEL).location.x)
@@ -54,7 +56,6 @@ mt_pixel mt_starting_pixel(mt_data* mt)
         pixel.value = mt->img.data[index];
         pixel.location.x = x;
         pixel.location.y = y;
-
       }
     }
   }
@@ -70,8 +71,17 @@ static void mt_init_nodes(mt_data* mt)
   // Set all parents as unassigned, and all areas as 1
   for (i = 0; i != mt->img.size; ++i)
   {
-    mt->nodes[i].parent = MT_UNASSIGNED;
-    mt->nodes[i].area = 1;
+    mt_node *node = mt->nodes + i;
+    mt_node_attributes *attr = mt->nodes_attributes + i;
+
+    node->parent = MT_UNASSIGNED;
+    node->area = 1;
+    attr->x = i % mt->img.width;
+    attr->y = i / mt->img.width;
+    attr->xx = attr->x * attr->x;
+    attr->yy = attr->y * attr->y;
+    attr->xy = attr->x * attr->y;
+    attr->len_major = attr->len_minor = 1;
   }
 }
 
@@ -162,6 +172,33 @@ static void mt_queue_neighbours(mt_data* mt,
   }
 }
 
+static void node_axes(mt_data* mt, INT_TYPE node_index)
+{
+  mt_node *node = mt->nodes + node_index;
+  mt_node_attributes *attr = mt->nodes_attributes + node_index;
+
+  FLOAT_TYPE area_div = 1.0 / node->area;
+  FLOAT_TYPE mean_x = attr->x * area_div;
+  FLOAT_TYPE mean_y = attr->y * area_div;
+
+  // Compute covariances
+  FLOAT_TYPE cov_xx = attr->xx * area_div - mean_x * mean_x;
+  FLOAT_TYPE cov_yy = attr->yy * area_div - mean_y * mean_y;
+  FLOAT_TYPE cov_xy = attr->xy * area_div - mean_x * mean_y;
+
+  // λ^2 - (cov_xx + cov_yy)λ + cov_xx * cov_yy - cov_xy * cov_yx = 0
+  FLOAT_TYPE b = cov_xx + cov_yy; // This is actually -b, because we only need -b and b^2
+  FLOAT_TYPE c = cov_xx * cov_yy - cov_xy * cov_xy;
+  
+  // Compute eigenvalues
+  FLOAT_TYPE s = sqrt(b*b - 4*c);
+  FLOAT_TYPE lambda_major = 0.5 * (b + s);
+  FLOAT_TYPE lambda_minor = 0.5 * (b - s);
+
+  attr->len_major = sqrt(lambda_major);
+  attr->len_minor = sqrt(lambda_minor);
+}
+
 static void mt_merge_nodes(mt_data* mt,
   INT_TYPE merge_to_idx,
   INT_TYPE merge_from_idx)
@@ -187,6 +224,14 @@ static void mt_merge_nodes(mt_data* mt,
 
   merge_from_attr->volume += delta * merge_from->area;
   merge_to_attr->volume += merge_from_attr->volume;
+
+  merge_to_attr->x  += merge_from_attr->x;
+  merge_to_attr->y  += merge_from_attr->y;
+  merge_to_attr->xx += merge_from_attr->xx;
+  merge_to_attr->yy += merge_from_attr->yy;
+  merge_to_attr->xy += merge_from_attr->xy;
+
+  node_axes(mt, merge_to_idx);
 }
 
 static void mt_descend(mt_data* mt, mt_pixel *next_pixel)

@@ -17,6 +17,7 @@
 
 /* End of settings */
 
+#define LONG_TYPE  int64_t
 #define INT_TYPE   int32_t
 #define SHORT_TYPE int16_t 
 

@@ -45,10 +45,63 @@ def read_fits_file(filename):
         hdulist.close()
 
         if img_data.dtype != np.double:
-            img_data = img_data.astype(float)
+            img_data = img_data.astype(np.float64)
 
         return img_data
 
+    except IOError:
+        print("Could not read file:", filename)
+        sys.exit(1)
+
+def read_fits_file2(filename, index):
+    fitsname, _ = filename.rsplit('.', 1)
+    fitsname = f'{fitsname}_fits.fits'
+    try:
+        hdulist = fits.open(filename)
+        hdufits = fits.open(fitsname)
+
+        entry = hdulist[1].data[index]
+        gal_filename = entry['gal_filename']
+        psf_filename = entry['psf_filename']
+        gal_hdu = entry['gal_hdu']
+        psf_hdu = entry['psf_hdu']
+        hdulist.close()
+
+        gal = read_fits_hdu(filename, gal_filename, gal_hdu, write=True)
+        psf = read_fits_hdu(filename, psf_filename, psf_hdu)
+
+        sersic = hdufits[1].data[index]['sersicfit']
+        print('SERSIC FIT IN CATALOG: I_e', sersic[0], 'R_e', sersic[1], 'n', sersic[2])
+
+        return gal, psf
+    
+    except IOError:
+        print("Could not read file:", filename)
+        sys.exit(1)
+
+def read_fits_hdu(catalog_filename, hdu_filename, hdu_index, write=False):
+    if '/' in catalog_filename:
+        path, _ = catalog_filename.rsplit('/', 1)
+        path = f'{path}/'
+    else:
+        path = ''
+
+    filename = f'{path}{hdu_filename}'
+    try:
+        hdulist = fits.open(filename)
+        hdu = hdulist[hdu_index]
+
+        if write:
+            hdu.writeto(f'{path}testimg.fits', overwrite=True)
+
+        img = hdu.data
+        hdulist.close()
+
+        if img.dtype != np.double:
+            img = img.astype(np.float64)
+        
+        return img
+    
     except IOError:
         print("Could not read file:", filename)
         sys.exit(1)
@@ -167,5 +220,6 @@ def make_parser():
     parser.add_argument('-min_distance', type=utils.validate_positive,
                          help='Minimum brightness distance between objects', default=0.0)
     parser.add_argument('-verbosity', type=int, help='Verbosity level (0-2)', choices=range(0, 3), default=0)
+    parser.add_argument('-cosmos', type=int, help='COSMOS index', default=-1)
 
     return parser
