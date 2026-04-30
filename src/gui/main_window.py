@@ -8,8 +8,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QWidget,
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt
 
-from widgets.about_dialog import AboutDialog
+from gui.widgets.about_dialog import AboutDialog
 
+# TODO: switch to Qt Resource Files (.qrc)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class MainWindow(QMainWindow):
@@ -67,10 +68,3 @@ class MainWindow(QMainWindow):
     def _aboutMessage(self):
         dialog = AboutDialog(self)
         dialog.exec()
-        
-
-
-app = QApplication()
-window = MainWindow()
-window.show()
-app.exec()
