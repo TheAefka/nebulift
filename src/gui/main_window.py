@@ -9,6 +9,7 @@ from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt
 
 from gui.widgets.about_dialog import AboutDialog
+from gui.widgets.settings_panel import SettingsPanel
 
 # TODO: switch to Qt Resource Files (.qrc)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,16 +54,11 @@ class MainWindow(QMainWindow):
         imageLabel.setAlignment(Qt.AlignCenter)
         imageLayout.addWidget(imageLabel)
 
-        leftPanel = QWidget()
-        leftPanelLayout = QVBoxLayout(leftPanel)
-
-        leftPanelLabel = QLabel("Settings Panel WIP")
-        leftPanelLabel.setAlignment(Qt.AlignCenter)
-        leftPanelLayout.addWidget(leftPanelLabel)
-
-        splitterLayout.addWidget(leftPanel)
+        leftPanel = SettingsPanel()
+        
         layout.addWidget(splitter)
-        splitterLayout.addWidget(imageContainer)
+        splitter.addWidget(leftPanel)
+        splitter.addWidget(imageContainer)
         
 
     def _aboutMessage(self):
