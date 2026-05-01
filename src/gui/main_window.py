@@ -4,12 +4,13 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QWidget,
                                QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
                                QSlider, QProgressBar, QComboBox, QCheckBox,
                                QSplitter, QMessageBox, QDialog, QDialogButtonBox,
-                               QLayout)
+                               QLayout, QFileDialog)
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt
 
 from gui.widgets.about_dialog import AboutDialog
 from gui.widgets.settings_panel import SettingsPanel
+from gui.widgets.image_panel import ImagePanel
 
 # TODO: switch to Qt Resource Files (.qrc)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,7 +33,7 @@ class MainWindow(QMainWindow):
         openAction = fileMenu.addAction("Open")
         exitAction = fileMenu.addAction("Exit")
 
-        openAction.triggered.connect(lambda item: print(f"Action Open triggered"))
+        openAction.triggered.connect(self.handle_open_image)
         exitAction.triggered.connect(self.close)
         
         aboutAction = helpMenu.addAction("About")
@@ -47,21 +48,32 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
         splitterLayout = QHBoxLayout(splitter)
 
-        imageContainer = QWidget()
-        imageLayout = QVBoxLayout(imageContainer)
+        self.imagePanel = ImagePanel()
+        self.leftPanel = SettingsPanel()
 
-        imageLabel = QLabel("Image Display WIP")
-        imageLabel.setAlignment(Qt.AlignCenter)
-        imageLayout.addWidget(imageLabel)
-
-        leftPanel = SettingsPanel()
+        self.leftPanel.open_requested.connect(self.handle_open_image)
         
         layout.addWidget(splitter)
-        splitterLayout.addWidget(leftPanel)
-        splitterLayout.addWidget(imageContainer)
+        splitterLayout.addWidget(self.leftPanel)
+        splitterLayout.addWidget(self.imagePanel)
         splitter.setStretchFactor(1, 1)
         
 
     def _aboutMessage(self):
         dialog = AboutDialog(self)
         dialog.exec()
+
+
+
+    def handle_open_image(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Image",
+            "",
+            "FITS Files (*.fits *.fit);;All Files (*)",
+        )
+        if file_path:
+            self.current_fits_path = file_path
+
+            self.imagePanel.load_file(file_path)
+            self.leftPanel.update_fits_display(file_path)

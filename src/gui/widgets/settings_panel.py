@@ -4,11 +4,14 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
                                QGroupBox, QFormLayout, QDoubleSpinBox,
                                QFileDialog, QHBoxLayout, QLabel, QComboBox,
                                QSlider, QSpinBox)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 
 
 class SettingsPanel(QWidget):
+
+    open_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -72,21 +75,13 @@ class SettingsPanel(QWidget):
         self.main_layout.addWidget(mtolibGroup)
 
         self.mto_bg_mean_checkbox.toggled.connect(self.mto_bg_mean.setEnabled)
-        self.mto_fits_path.clicked.connect(self.open_image)
+        self.mto_fits_path.clicked.connect(self.open_requested.emit)
 
 
-    def open_image(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open Image",
-            "",
-            "FITS Files (*.fits *.fit);;All Files (*)",
-        )
+    def update_fits_display(self, file_path):
         if file_path:
-            self.current_fits_path = file_path
             self.mto_build_btn.setEnabled(True)
             self.mto_fits_path.setText(os.path.basename(file_path))
-            print(f"{file_path}")
 
     
     def _setup_classification_group(self):
