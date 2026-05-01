@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, Signal
 class SettingsPanel(QWidget):
 
     open_requested = Signal()
+    process_requested = Signal(str, dict, dict, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,10 +77,12 @@ class SettingsPanel(QWidget):
 
         self.mto_bg_mean_checkbox.toggled.connect(self.mto_bg_mean.setEnabled)
         self.mto_fits_path.clicked.connect(self.open_requested.emit)
+        self.mto_build_btn.clicked.connect(self._emit_process_request)
 
 
     def update_fits_display(self, file_path):
         if file_path:
+            self.current_fits_path = file_path
             self.mto_build_btn.setEnabled(True)
             self.mto_fits_path.setText(os.path.basename(file_path))
 
@@ -132,38 +135,85 @@ class SettingsPanel(QWidget):
         self.stretchFuncComboBox.addItems(["asinh"])
         stretchLayout.addRow("Stretch Function", self.stretchFuncComboBox)
 
-        categories = ["Background", "Compact", "Diffuse", "Blackpoint"]
+        categories = ["Background", "Compact", "Diffuse"]
 
         for cat in categories:
             check, spin, row_ui = self._create_stretch_row(cat)
             stretchLayout.addRow(row_ui)
 
-            self.classifControls[cat] = {"check": check, "spin": spin}        
+            self.classifControls[cat] = {"check": check, "spin": spin}
+
+        bp_slider, bp_spin, bp_row = self._create_stretch_row("Blackpoint", is_float=True, min_val=0.0, max_val=1.0, decimals=4)
+        stretchLayout.addRow(bp_row)
+        self.classifControls["Blackpoint"] = {"slider": bp_slider, "spin": bp_spin}
 
         self.main_layout.addWidget(stretchGroup)
 
 
 
-    def _create_stretch_row(self, labelText):
+    def _create_stretch_row(self, labelText, is_float=False, min_val=0, max_val=2000, decimals=4):
         rowWidget = QWidget()
         rowLayout = QHBoxLayout(rowWidget)
-
         rowLayout.setContentsMargins(0, 0, 0, 0)
 
         label = QLabel(labelText)
         label.setFixedWidth(80)
-        slider = QSlider()
-        slider.setOrientation(Qt.Horizontal)
-        spinbox = QSpinBox()
-        slider.setRange(0, 2000)
-        spinbox.setRange(0, 2000)
 
-        slider.valueChanged.connect(spinbox.setValue)
-        spinbox.valueChanged.connect(slider.setValue)
+        slider = QSlider(Qt.Horizontal)
+        
+        if is_float:
+            spinbox = QDoubleSpinBox(decimals=decimals)
+            spinbox.setRange(min_val, max_val)
+            multiplier = 10**decimals
+            slider.setRange(int(min_val * multiplier), int(max_val * multiplier))
+
+            slider.valueChanged.connect(lambda v: spinbox.setValue(v / multiplier))
+            spinbox.valueChanged.connect(lambda v: slider.setValue(int(v * multiplier)))
+        else:
+            spinbox = QSpinBox()
+            spinbox.setRange(int(min_val), int(max_val))
+            slider.setRange(int(min_val), int(max_val))
+
+            slider.valueChanged.connect(spinbox.setValue)
+            spinbox.valueChanged.connect(slider.setValue)
 
         rowLayout.addWidget(label)
-        
         rowLayout.addWidget(slider)
         rowLayout.addWidget(spinbox)
 
         return slider, spinbox, rowWidget
+
+    def _emit_process_request(self):
+        if not hasattr(self, 'current_fits_path'):
+            return
+        
+        # MTO settings
+        mto_params = {
+            'alpha': self.mto_alpha.value(),
+            'move_factor': self.mto_move_factor.value(),
+            'bg_mean': self.mto_bg_mean.value() if self.mto_bg_mean_checkbox.checkState() == Qt.Checked else None,
+            'bg_variance': self.mto_bg_variance.value(),
+            'gain': self.mto_gain.value(),
+            'min_distance': self.mto_min_distance.value(),
+            'move_factor': self.mto_move_factor.value(),
+            'soft_bias': self.mto_soft_bias.value(),
+        }
+
+        # Classification settings
+        classif_params = {
+            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value()
+        }
+
+        # Stretch settings
+        stretch_params = {
+            'compact': self.classifControls["Compact"]["spin"].value(),
+            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
+            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+        }
+
+        self.process_requested.emit(
+            self.current_fits_path, 
+            mto_params, 
+            classif_params, 
+            stretch_params
+        )

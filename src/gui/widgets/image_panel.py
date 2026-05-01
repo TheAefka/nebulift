@@ -53,6 +53,19 @@ class ImagePanel(QWidget):
             height, width = normalized.shape
             return QImage(normalized.data, width, height, width, QImage.Format_Grayscale8)
     
+    def load_numpy_array(self, image_data: np.ndarray):        
+        # Scale to 0-255
+        scaled_data = (image_data * 255.0).clip(0, 255).astype(np.uint8)
+
+        height, width = scaled_data.shape
+
+        self._current_image_data = scaled_data 
+        qimage = QImage(self._current_image_data.data, width, height, width, QImage.Format_Grayscale8)
+
+        self.image_label.setPixmap(QPixmap.fromImage(qimage))
+        self.scale_factor = 1.0
+        self.image_label.adjustSize()
+    
     def _scale_image(self, factor):
         if self.image_label.pixmap():
             self.scale_factor *= factor

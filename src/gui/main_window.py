@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt
 from gui.widgets.about_dialog import AboutDialog
 from gui.widgets.settings_panel import SettingsPanel
 from gui.widgets.image_panel import ImagePanel
+from gui.workers import processingWorker
 
 # TODO: switch to Qt Resource Files (.qrc)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -66,6 +67,8 @@ class MainWindow(QMainWindow):
         splitterLayout.addWidget(self.leftPanel)
         splitterLayout.addWidget(self.imagePanel)
         splitter.setStretchFactor(1, 1)
+
+        self.leftPanel.process_requested.connect(self.start_processing)
         
 
     def _aboutMessage(self):
@@ -92,3 +95,24 @@ class MainWindow(QMainWindow):
 
     def _zoom_out(self):
         self.imagePanel.zoom_out()
+
+    
+    def start_processing(self, fits_path, mto_params, class_params, stretch_params):
+        self.leftPanel.setEnabled(False) 
+        self.imagePanel.image_label.setText("Building max-tree...")
+
+        self.worker = processingWorker(fits_path, mto_params, class_params, stretch_params)
+        self.worker.finished_success.connect(self.on_processing_success)
+        self.worker.finished_error.connect(self.on_processing_error)
+        self.worker.start()
+
+    def on_processing_success(self, stretched_image_array):
+        self.leftPanel.setEnabled(True)
+        self.imagePanel.load_numpy_array(stretched_image_array)
+        self.worker.deleteLater()
+
+    def on_processing_error(self, error_msg):
+        self.leftPanel.setEnabled(True)
+        QMessageBox.critical(self, "Pipeline Error", error_msg)
+        self.imagePanel.image_label.setText("Error during processing.")
+        self.worker.deleteLater()
