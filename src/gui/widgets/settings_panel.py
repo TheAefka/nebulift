@@ -172,6 +172,7 @@ class SettingsPanel(QWidget):
             spinbox = QDoubleSpinBox(decimals=decimals)
             spinbox.setRange(min_val, max_val)
             multiplier = 10**decimals
+            spinbox.setSingleStep(1.0 / multiplier)
             slider.setRange(int(min_val * multiplier), int(max_val * multiplier))
 
             slider.valueChanged.connect(lambda v: spinbox.setValue(v / multiplier))

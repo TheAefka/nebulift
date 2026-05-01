@@ -90,6 +90,7 @@ class MainWindow(QMainWindow):
             self.current_fits_path = file_path
 
             self.imagePanel.load_file(file_path)
+            self.imagePanel.fit_to_view()
             self.leftPanel.update_fits_display(file_path)
 
     def _zoom_in(self):
@@ -134,5 +135,5 @@ class MainWindow(QMainWindow):
         self.stretch_worker.start()
     
     def _on_stretch_finished(self, new_image):
-        self.imagePanel.load_numpy_array(new_image)
+        self.imagePanel.load_numpy_array(new_image, preserve_zoom=True)
         self.leftPanel.setEnabled(True)
