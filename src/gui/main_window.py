@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt
 from gui.widgets.about_dialog import AboutDialog
 from gui.widgets.settings_panel import SettingsPanel
 from gui.widgets.image_panel import ImagePanel
-from gui.workers import processingWorker
+from gui.workers import processingWorker, stretchWorker
 
 # TODO: switch to Qt Resource Files (.qrc)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -69,6 +69,8 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
 
         self.leftPanel.process_requested.connect(self.start_processing)
+        self.cached_mto_results = None
+        self.leftPanel.parameters_changed.connect(self.update_stretch)
         
 
     def _aboutMessage(self):
@@ -106,8 +108,9 @@ class MainWindow(QMainWindow):
         self.worker.finished_error.connect(self.on_processing_error)
         self.worker.start()
 
-    def on_processing_success(self, stretched_image_array):
+    def on_processing_success(self, stretched_image_array, mto_results):
         self.leftPanel.setEnabled(True)
+        self.cached_mto_results = mto_results
         self.imagePanel.load_numpy_array(stretched_image_array)
         self.worker.deleteLater()
 
@@ -116,3 +119,20 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Pipeline Error", error_msg)
         self.imagePanel.image_label.setText("Error during processing.")
         self.worker.deleteLater()
+
+    def update_stretch(self, classif, stretch):
+        if self.cached_mto_results is None:
+            return
+        
+        self.leftPanel.setEnabled(False)
+
+        if hasattr(self, 'stretch_worker') and self.stretch_worker.isRunning():
+            self.stretch_worker.wait() # Wait for finished
+
+        self.stretch_worker = stretchWorker(self.cached_mto_results, classif, stretch)
+        self.stretch_worker.finished_success.connect(self._on_stretch_finished)
+        self.stretch_worker.start()
+    
+    def _on_stretch_finished(self, new_image):
+        self.imagePanel.load_numpy_array(new_image)
+        self.leftPanel.setEnabled(True)

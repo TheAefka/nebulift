@@ -12,6 +12,7 @@ class SettingsPanel(QWidget):
 
     open_requested = Signal()
     process_requested = Signal(str, dict, dict, dict)
+    parameters_changed = Signal(dict, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -24,7 +25,13 @@ class SettingsPanel(QWidget):
         self._setup_classification_group()
         self._setup_stretch_group()
 
+        self.apply_btn = QPushButton("Apply Classification/Stretch")
+        self.main_layout.addWidget(self.apply_btn)
+
         self.main_layout.addStretch()
+
+        # self._connect_signals()
+        self.apply_btn.clicked.connect(self._on_parameter_changed)
 
     def _setup_mtolib_group(self):
         # MTOlib settings
@@ -217,3 +224,25 @@ class SettingsPanel(QWidget):
             classif_params, 
             stretch_params
         )
+
+    # def _connect_signals(self):
+    #     for cat in self.classifControls:
+    #         controls = self.classifControls[cat]
+    #         if "spin" in controls:
+    #             controls["spin"].valueChanged.connect(self._on_parameter_changed)
+    #         if "slider" in controls:
+    #             controls["slider"].valueChanged.connect(self._on_parameter_changed)
+
+    def _on_parameter_changed(self):
+        if not hasattr(self, 'current_fits_path'):
+            return
+
+        classif_params = {
+            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value()
+        }
+        stretch_params = {
+            'compact': self.classifControls["Compact"]["spin"].value(),
+            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
+            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+        }
+        self.parameters_changed.emit(classif_params, stretch_params)

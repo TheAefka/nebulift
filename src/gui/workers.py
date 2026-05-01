@@ -7,7 +7,7 @@ from backend.classify import classify_objects, COMPACT, DIFFUSE, UNCLASSIFIED
 from backend.stretch import apply_adaptive_stretch, asinh_stretch
 
 class processingWorker(QThread):
-    finished_success = Signal(np.ndarray) 
+    finished_success = Signal(np.ndarray, dict) 
     finished_error = Signal(str)
     
     def __init__(self, fits_path, mto_params, class_params, stretch_params):
@@ -75,8 +75,52 @@ class processingWorker(QThread):
             )
 
             # Return np.ndarray to GUI
-            self.finished_success.emit(stretched_image)
+            self.finished_success.emit(stretched_image, mto_results)
 
         except Exception as e:
             import traceback
             self.finished_error.emit(f"{str(e)}\n\n traceback.format_exec()")
+
+
+
+class stretchWorker(QThread):
+    finished_success = Signal(np.ndarray)
+
+    def __init__(self, mto_results, class_params, stretch_params):
+        super().__init__()
+        self.mto_results = mto_results
+        self.class_params = class_params
+        self.stretch_params = stretch_params
+
+    def run(self):
+        # cached data
+        img = self.mto_results['image']
+        id_map = self.mto_results['id_map'].astype(np.int64)
+        image_parameters = pd.DataFrame(
+            self.mto_results['image_parameters'][1:],
+            columns=self.mto_results['image_parameters'][0]
+        )
+
+        # Re-classify
+        r_threshold = self.class_params.get('r_fwhm_threshold')
+        classified_params = classify_objects(image_parameters, r_threshold)
+
+        # Re-build class map
+        object_ids = classified_params['ID'].to_numpy(dtype=np.int64)
+        object_types = classified_params['source_type'].to_numpy(dtype=np.int8)
+        
+        max_id = max(int(id_map.max()), int(object_ids.max()) if object_ids.size else 0)
+        lut = np.full(max_id + 1, -1, dtype=np.int8)
+        lut[object_ids[object_ids >= 0]] = object_types[object_ids >= 0]
+
+        class_map = np.full(id_map.shape, -1, dtype=np.int8)
+        class_map[id_map >= 0] = lut[id_map[id_map >= 0]]
+
+        # Re-stretch
+        stretched = apply_adaptive_stretch(
+            img, class_map,
+            lambda x: asinh_stretch(x, self.stretch_params['compact'], self.stretch_params['black_point']),
+            lambda x: asinh_stretch(x, self.stretch_params['diffuse'], self.stretch_params['black_point']),
+            black_point=self.stretch_params['black_point']
+        )
+        self.finished_success.emit(stretched)
