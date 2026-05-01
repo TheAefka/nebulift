@@ -2,7 +2,8 @@ import os
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
                                QGroupBox, QFormLayout, QDoubleSpinBox,
-                               QFileDialog, QHBoxLayout, QLabel)
+                               QFileDialog, QHBoxLayout, QLabel, QComboBox,
+                               QSlider, QSpinBox)
 from PySide6.QtCore import Qt
 
 
@@ -17,6 +18,7 @@ class SettingsPanel(QWidget):
 
         self._setup_mtolib_group()
         self._setup_classification_group()
+        self._setup_stretch_group()
 
         self.main_layout.addStretch()
 
@@ -89,7 +91,7 @@ class SettingsPanel(QWidget):
     
     def _setup_classification_group(self):
         classifGroup = QGroupBox("Classification Settings")
-        classifLayout = QFormLayout()
+        classifLayout = QFormLayout(classifGroup)
 
         self.classifControls = {}
 
@@ -99,9 +101,11 @@ class SettingsPanel(QWidget):
             check, spin, row_ui = self._create_classification_row(cat)
             classifLayout.addRow(row_ui)
 
-            self.classifControls[cat] = {"check": check, "spin": spin}
+            self.classifControls[cat] = {"check": check, "spin": spin}        
 
-        classifGroup.setLayout(classifLayout)
+        self.showClassificationOverlay = QCheckBox("Show Overlay?")
+        classifLayout.addRow(self.showClassificationOverlay)
+
         self.main_layout.addWidget(classifGroup)
 
 
@@ -109,8 +113,10 @@ class SettingsPanel(QWidget):
         rowWidget = QWidget()
         rowLayout = QHBoxLayout(rowWidget)
 
-        checkbox = QCheckBox()
-        label = QLabel(labelText)
+        rowLayout.setContentsMargins(0, 0, 0, 0)
+
+        checkbox = QCheckBox(labelText)
+        checkbox.setFixedWidth(80)
         spinbox = QDoubleSpinBox(decimals=4)
         spinbox.setRange(0.0, 100.0)
 
@@ -118,8 +124,51 @@ class SettingsPanel(QWidget):
         checkbox.toggled.connect(spinbox.setEnabled)
 
         rowLayout.addWidget(checkbox)
-        rowLayout.addWidget(label)
         rowLayout.addWidget(spinbox)
 
         return checkbox, spinbox, rowWidget
 
+
+    def _setup_stretch_group(self):
+        stretchGroup = QGroupBox("Stretch Settings")
+        stretchLayout = QFormLayout(stretchGroup)
+
+        self.stretchFuncComboBox = QComboBox()
+        self.stretchFuncComboBox.addItems(["asinh"])
+        stretchLayout.addRow("Stretch Function", self.stretchFuncComboBox)
+
+        categories = ["Background", "Compact", "Diffuse", "Blackpoint"]
+
+        for cat in categories:
+            check, spin, row_ui = self._create_stretch_row(cat)
+            stretchLayout.addRow(row_ui)
+
+            self.classifControls[cat] = {"check": check, "spin": spin}        
+
+        self.main_layout.addWidget(stretchGroup)
+
+
+
+    def _create_stretch_row(self, labelText):
+        rowWidget = QWidget()
+        rowLayout = QHBoxLayout(rowWidget)
+
+        rowLayout.setContentsMargins(0, 0, 0, 0)
+
+        label = QLabel(labelText)
+        label.setFixedWidth(80)
+        slider = QSlider()
+        slider.setOrientation(Qt.Horizontal)
+        spinbox = QSpinBox()
+        slider.setRange(0, 2000)
+        spinbox.setRange(0, 2000)
+
+        slider.valueChanged.connect(spinbox.setValue)
+        spinbox.valueChanged.connect(slider.setValue)
+
+        rowLayout.addWidget(label)
+        
+        rowLayout.addWidget(slider)
+        rowLayout.addWidget(spinbox)
+
+        return slider, spinbox, rowWidget
