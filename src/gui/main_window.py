@@ -57,8 +57,9 @@ class MainWindow(QMainWindow):
         leftPanel = SettingsPanel()
         
         layout.addWidget(splitter)
-        splitter.addWidget(leftPanel)
-        splitter.addWidget(imageContainer)
+        splitterLayout.addWidget(leftPanel)
+        splitterLayout.addWidget(imageContainer)
+        splitter.setStretchFactor(1, 1)
         
 
     def _aboutMessage(self):
