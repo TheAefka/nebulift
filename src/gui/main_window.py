@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QWidget,
                                QSlider, QProgressBar, QComboBox, QCheckBox,
                                QSplitter, QMessageBox, QDialog, QDialogButtonBox,
                                QLayout, QFileDialog)
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon, QPixmap, QKeySequence
 from PySide6.QtCore import Qt
 
 from gui.widgets.about_dialog import AboutDialog
@@ -28,10 +28,18 @@ class MainWindow(QMainWindow):
         
         fileMenu = menuBar.addMenu("File")
         editMenu = menuBar.addMenu("Edit")
+        viewMenu = menuBar.addMenu("View")
         helpMenu = menuBar.addMenu("Help")
 
         openAction = fileMenu.addAction("Open")
         exitAction = fileMenu.addAction("Exit")
+        
+        zoomInAction = viewMenu.addAction("Zoom In")
+        zoomInAction.setShortcuts([QKeySequence("Ctrl+="), QKeySequence("Ctrl++")])
+        zoomInAction.triggered.connect(self._zoom_in)
+        zoomOutAction = viewMenu.addAction("Zoom Out")
+        zoomOutAction.setShortcut(QKeySequence.StandardKey.ZoomOut)
+        zoomOutAction.triggered.connect(self._zoom_out)
 
         openAction.triggered.connect(self.handle_open_image)
         exitAction.triggered.connect(self.close)
@@ -77,3 +85,9 @@ class MainWindow(QMainWindow):
 
             self.imagePanel.load_file(file_path)
             self.leftPanel.update_fits_display(file_path)
+
+    def _zoom_in(self):
+        self.imagePanel.zoom_in()
+
+    def _zoom_out(self):
+        self.imagePanel.zoom_out()

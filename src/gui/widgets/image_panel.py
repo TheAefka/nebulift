@@ -7,18 +7,19 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
                                QGroupBox, QFormLayout, QDoubleSpinBox,
                                QFileDialog, QHBoxLayout, QLabel, QComboBox,
                                QSlider, QSpinBox, QScrollArea)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Slot, QEvent
 from PySide6.QtGui import QPixmap, QImage
 
 
 class ImagePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.scale_factor = 1.0
 
         self.layout = QVBoxLayout(self)
 
         self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setWidgetResizable(False)
         self.scroll_area.setAlignment(Qt.AlignCenter)
 
         self.image_label = QLabel("No Image Loaded")
@@ -28,10 +29,15 @@ class ImagePanel(QWidget):
         self.scroll_area.setWidget(self.image_label)
         self.layout.addWidget(self.scroll_area)
 
+        self.scroll_area.installEventFilter(self)
+        self.scroll_area.viewport().installEventFilter(self)
+
     def load_file(self, file_path):
         pixmap = QPixmap(self._convert_fits_to_qimage(file_path))
         if not pixmap.isNull():
             self.image_label.setPixmap(pixmap)
+            self.scale_factor = 1.0
+            self.image_label.adjustSize()
         else:
             self.image_label.setText("Failed to load image.")
     
@@ -46,3 +52,41 @@ class ImagePanel(QWidget):
 
             height, width = normalized.shape
             return QImage(normalized.data, width, height, width, QImage.Format_Grayscale8)
+    
+    def _scale_image(self, factor):
+        if self.image_label.pixmap():
+            self.scale_factor *= factor
+            new_size = self.image_label.pixmap().size() * self.scale_factor
+            self.image_label.resize(new_size)
+
+    @Slot()
+    def zoom_in(self):
+        self._scale_image(1.25)
+
+    @Slot()
+    def zoom_out(self):
+        self._scale_image(0.8)
+
+    def eventFilter(self, source, event):
+        # Zoom in/out with ctrl+scroll
+        if event.type() == QEvent.Type.Wheel:
+            if event.modifiers() & Qt.ControlModifier:
+                mouse_pos = event.position()
+                old_pos = self.image_label.mapFrom(self.scroll_area.viewport(), mouse_pos.toPoint())
+                factor = 1.1 if event.angleDelta().y() > 0 else 0.9
+                self._scale_image(factor)
+
+                new_pos = old_pos * factor
+                delta = new_pos - old_pos
+
+                self.scroll_area.horizontalScrollBar().setValue(
+                    self.scroll_area.horizontalScrollBar().value() + delta.x()
+                )
+                self.scroll_area.verticalScrollBar().setValue(
+                    self.scroll_area.verticalScrollBar().value() + delta.y()
+                )
+
+                event.accept()
+                return True  # == Event handled
+        
+        return super().eventFilter(source, event)
