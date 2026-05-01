@@ -15,6 +15,7 @@ class ImagePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scale_factor = 1.0
+        self._pan_start = None
 
         self.layout = QVBoxLayout(self)
 
@@ -82,6 +83,30 @@ class ImagePanel(QWidget):
         self._scale_image(0.8)
 
     def eventFilter(self, source, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MiddleButton:
+                self._pan_start = event.globalPosition().toPoint()
+                self.scroll_area.viewport().setCursor(Qt.ClosedHandCursor)
+                return True
+        
+        elif event.type() == QEvent.Type.MouseMove:
+            if self._pan_start is not None:
+                delta = event.globalPosition().toPoint() - self._pan_start
+                self._pan_start = event.globalPosition().toPoint()
+                self.scroll_area.horizontalScrollBar().setValue(
+                    self.scroll_area.horizontalScrollBar().value() - delta.x()
+                )
+                self.scroll_area.verticalScrollBar().setValue(
+                    self.scroll_area.verticalScrollBar().value() - delta.y()
+                )
+                return True
+
+        elif event.type() == QEvent.Type.MouseButtonRelease:
+            if event.button() == Qt.MiddleButton:
+                self._pan_start = None
+                self.scroll_area.viewport().setCursor(Qt.ArrowCursor)
+                return True
+
         # Zoom in/out with ctrl+scroll
         if event.type() == QEvent.Type.Wheel:
             if event.modifiers() & Qt.ControlModifier:
