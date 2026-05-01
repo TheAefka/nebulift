@@ -19,7 +19,7 @@ class AboutDialog(QDialog):
         iconLabel.setAlignment(Qt.AlignVCenter)
         
         infoLabel = QLabel("""<h1>Nebulift</h1>
-                              <span style='color: palette(dark); font-size: 11px;'>Version 0.0.7</span><br><br>
+                              <span style='color: palette(dark); font-size: 11px;'>Version 0.0.8</span><br><br>
                               Nebulift is a tool for visualizing diffuse objects by<br>stretching FITS images without distorting point sources.<br><br>
                               <span style='color: palette(dark);'>Developed by Niels de Boer<br>
                               University of Groningen (2026)</span><br><br>

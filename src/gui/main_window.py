@@ -22,6 +22,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Nebulift")
         self.setWindowIcon(QIcon(os.path.join(BASE_DIR, "resources", "icons", "logo.png")))
+        self.resize(1280, 720)
 
         # Menu bar
         menuBar = self.menuBar()
