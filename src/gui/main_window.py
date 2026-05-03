@@ -71,7 +71,8 @@ class MainWindow(QMainWindow):
         self.leftPanel.process_requested.connect(self.start_processing)
         self.cached_mto_results = None
         self.leftPanel.parameters_changed.connect(self.update_stretch)
-        
+        self.leftPanel.overlay_toggled.connect(self.imagePanel._set_overlay)
+
 
     def _aboutMessage(self):
         dialog = AboutDialog(self)
@@ -109,10 +110,11 @@ class MainWindow(QMainWindow):
         self.worker.finished_error.connect(self.on_processing_error)
         self.worker.start()
 
-    def on_processing_success(self, stretched_image_array, mto_results):
+    def on_processing_success(self, stretched_image_array, class_map, mto_results):
         self.leftPanel.setEnabled(True)
         self.cached_mto_results = mto_results
-        self.imagePanel.load_numpy_array(stretched_image_array)
+        self.imagePanel.load_numpy_array(stretched_image_array, class_map=class_map)
+        self.imagePanel.fit_to_view()
         self.worker.deleteLater()
 
     def on_processing_error(self, error_msg):
@@ -134,6 +136,6 @@ class MainWindow(QMainWindow):
         self.stretch_worker.finished_success.connect(self._on_stretch_finished)
         self.stretch_worker.start()
     
-    def _on_stretch_finished(self, new_image):
-        self.imagePanel.load_numpy_array(new_image, preserve_zoom=True)
+    def _on_stretch_finished(self, new_image, class_map):
+        self.imagePanel.load_numpy_array(new_image, class_map=class_map, preserve_zoom=True)
         self.leftPanel.setEnabled(True)

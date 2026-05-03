@@ -13,6 +13,7 @@ class SettingsPanel(QWidget):
     open_requested = Signal()
     process_requested = Signal(str, dict, dict, dict)
     parameters_changed = Signal(dict, dict)
+    overlay_toggled = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -109,6 +110,7 @@ class SettingsPanel(QWidget):
             self.classifControls[cat] = {"check": check, "spin": spin}        
 
         self.showClassificationOverlay = QCheckBox("Show Overlay?")
+        self.showClassificationOverlay.toggled.connect(self.overlay_toggled)
         classifLayout.addRow(self.showClassificationOverlay)
 
         self.main_layout.addWidget(classifGroup)

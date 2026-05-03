@@ -7,7 +7,7 @@ from backend.classify import classify_objects, COMPACT, DIFFUSE, UNCLASSIFIED
 from backend.stretch import apply_adaptive_stretch, asinh_stretch
 
 class processingWorker(QThread):
-    finished_success = Signal(np.ndarray, dict) 
+    finished_success = Signal(np.ndarray, np.ndarray, dict) 
     finished_error = Signal(str)
     
     def __init__(self, fits_path, mto_params, class_params, stretch_params):
@@ -78,7 +78,7 @@ class processingWorker(QThread):
             )
 
             # Return np.ndarray to GUI
-            self.finished_success.emit(stretched_image, mto_results)
+            self.finished_success.emit(stretched_image, class_map, mto_results)
 
         except Exception as e:
             import traceback
@@ -87,7 +87,7 @@ class processingWorker(QThread):
 
 
 class stretchWorker(QThread):
-    finished_success = Signal(np.ndarray)
+    finished_success = Signal(np.ndarray, np.ndarray)
 
     def __init__(self, mto_results, class_params, stretch_params):
         super().__init__()
@@ -131,4 +131,4 @@ class stretchWorker(QThread):
             compact_label=COMPACT,
             diffuse_label=DIFFUSE,
         )
-        self.finished_success.emit(stretched)
+        self.finished_success.emit(stretched, class_map)

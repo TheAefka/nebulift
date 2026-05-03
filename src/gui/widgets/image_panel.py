@@ -9,13 +9,16 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
                                QSlider, QSpinBox, QScrollArea)
 from PySide6.QtCore import Qt, Slot, QEvent
 from PySide6.QtGui import QPixmap, QImage
-
+from backend.classify import DIFFUSE, COMPACT
 
 class ImagePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scale_factor = 1.0
         self._pan_start = None
+        self._current_image_data = None
+        self._current_class_map = None
+        self._overlay_toggled = False
 
         self.layout = QVBoxLayout(self)
 
@@ -54,11 +57,18 @@ class ImagePanel(QWidget):
             height, width = normalized.shape
             return QImage(normalized.data, width, height, width, QImage.Format_Grayscale8)
     
-    def load_numpy_array(self, image_data: np.ndarray, preserve_zoom: bool = False):
-        scaled_data = (image_data * 255.0).clip(0, 255).astype(np.uint8)
-        height, width = scaled_data.shape
-        self._current_image_data = scaled_data
-        qimage = QImage(self._current_image_data.data, width, height, width, QImage.Format_Grayscale8)
+    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, preserve_zoom: bool = False):
+        self._current_image_data = (image_data * 255.0).clip(0, 255).astype(np.uint8)
+        if class_map is not None:
+            self._current_class_map = class_map
+        self._render_image(preserve_zoom=preserve_zoom)
+
+    def _render_image(self, preserve_zoom = False):
+        if self._overlay_toggled and self._current_class_map is not None:
+            qimage = self._build_classif_overlay()
+        else:
+            height, width = self._current_image_data.shape
+            qimage = QImage(self._current_image_data.data, width, height, width, QImage.Format_Grayscale8)
         self.image_label.setPixmap(QPixmap.fromImage(qimage))
 
         if preserve_zoom:
@@ -67,12 +77,28 @@ class ImagePanel(QWidget):
         else:
             self.scale_factor = 1.0
             self.image_label.adjustSize()
+
     
     def _scale_image(self, factor):
         if self.image_label.pixmap():
             self.scale_factor *= factor
             new_size = self.image_label.pixmap().size() * self.scale_factor
             self.image_label.resize(new_size)
+
+    def _build_classif_overlay(self) -> QImage:
+        grey = self._current_image_data
+        height, width = grey.shape
+        rgb = np.stack([grey, grey, grey], axis=2).astype(np.float32)
+        for class_value in [DIFFUSE, COMPACT]:
+            mask = self._current_class_map == class_value
+            if mask.any():
+                rgb[mask] = (np.array([(class_value==COMPACT)*255, (class_value==DIFFUSE)*255, 0], dtype=np.float32))
+        image_array = np.ascontiguousarray(rgb.clip(0, 255).astype(np.uint8))
+        return QImage(image_array.data, width, height, 3 * width, QImage.Format_RGB888)
+    
+    def _set_overlay(self, enabled):
+        self._overlay_toggled = enabled
+        self._render_image(preserve_zoom=True)
 
     @Slot()
     def zoom_in(self):
