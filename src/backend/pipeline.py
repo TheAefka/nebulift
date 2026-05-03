@@ -53,7 +53,7 @@ def run_mto(
     mt = mto.build_max_tree(processed_image, params)
 
     # Filter the tree and find objects
-    id_map, sig_ancs = mto.filter_tree(mt, processed_image, params)
+    id_map, sig_ancs, mto_struct = mto.filter_tree(mt, processed_image, params)
 
     # Relabel objects for clearer visualisation
     id_map = mto.relabel_segments(id_map, shuffle_labels=False)

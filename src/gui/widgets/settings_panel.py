@@ -214,6 +214,7 @@ class SettingsPanel(QWidget):
 
         # Stretch settings
         stretch_params = {
+            'background': self.classifControls["Background"]["spin"].value(),
             'compact': self.classifControls["Compact"]["spin"].value(),
             'diffuse': self.classifControls["Diffuse"]["spin"].value(),
             'black_point': self.classifControls["Blackpoint"]["spin"].value(),
@@ -242,6 +243,7 @@ class SettingsPanel(QWidget):
             'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value()
         }
         stretch_params = {
+            'background': self.classifControls["Background"]["spin"].value(),
             'compact': self.classifControls["Compact"]["spin"].value(),
             'diffuse': self.classifControls["Diffuse"]["spin"].value(),
             'black_point': self.classifControls["Blackpoint"]["spin"].value(),

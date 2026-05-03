@@ -83,6 +83,7 @@ class ImagePanel(QWidget):
         self._scale_image(0.8)
 
     def eventFilter(self, source, event):
+        # Mouse panning with middle click+drag
         if event.type() == QEvent.Type.MouseButtonPress:
             if event.button() == Qt.MiddleButton:
                 self._pan_start = event.globalPosition().toPoint()

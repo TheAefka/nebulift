@@ -60,18 +60,21 @@ class processingWorker(QThread):
             class_map[valid_pixels] = id_to_type_lut[id_map[valid_pixels]]
 
             # Stretch
+            b_stretch = self.stretch_params.get('background', 5.0)
             c_stretch = self.stretch_params.get('compact', 100.0)
             d_stretch = self.stretch_params.get('diffuse', 10.0)
             bp = self.stretch_params.get('black_point', 0.001)
 
             stretched_image = apply_adaptive_stretch(
                 image,
-                class_map,
-                lambda x: asinh_stretch(x, stretch_factor=c_stretch, black_point=bp),
-                lambda x: asinh_stretch(x, stretch_factor=d_stretch, black_point=bp),
+                id_map=mto_results['id_map'],
+                class_map=class_map,
+                bg_stretch_factor=b_stretch,
+                diffuse_stretch_factor=d_stretch,
+                compact_stretch_factor=c_stretch,
                 black_point=bp,
                 compact_label=COMPACT,
-                diffuse_label=DIFFUSE
+                diffuse_label=DIFFUSE,
             )
 
             # Return np.ndarray to GUI
@@ -118,9 +121,14 @@ class stretchWorker(QThread):
 
         # Re-stretch
         stretched = apply_adaptive_stretch(
-            img, class_map,
-            lambda x: asinh_stretch(x, self.stretch_params['compact'], self.stretch_params['black_point']),
-            lambda x: asinh_stretch(x, self.stretch_params['diffuse'], self.stretch_params['black_point']),
-            black_point=self.stretch_params['black_point']
+            img,
+            id_map=id_map,
+            class_map=class_map,
+            bg_stretch_factor=self.stretch_params['background'],
+            diffuse_stretch_factor=self.stretch_params['diffuse'],
+            compact_stretch_factor=self.stretch_params['compact'],
+            black_point=self.stretch_params['black_point'],
+            compact_label=COMPACT,
+            diffuse_label=DIFFUSE,
         )
         self.finished_success.emit(stretched)
