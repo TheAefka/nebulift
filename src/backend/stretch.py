@@ -95,7 +95,7 @@ def apply_adaptive_stretch(image: np.ndarray,
         result[diffuse_mask] = (
             asinh_stretch(d_floor_norm, bg_stretch_factor, black_point)
             + asinh_stretch(d_delta_norm, diffuse_stretch_factor, 0)
-        )
+        ) # TODO: (issue) this creates halo/border due to separate stacked diffuse objects. Fix could be flooring based on stretched parent (?)
     
     # Compact stretch
     compact_mask = class_map == compact_label
@@ -107,6 +107,6 @@ def apply_adaptive_stretch(image: np.ndarray,
             asinh_stretch(np.zeros(n_compact, dtype=np.float32), bg_stretch_factor, black_point)
             + asinh_stretch(c_floor_norm, diffuse_stretch_factor, 0)
             + asinh_stretch(c_delta_norm, compact_stretch_factor, 0)
-        ) # TODO: (issue) this still creates halo/border due to (?) flat flooring
+        )
 
     return np.clip(result, 0.0, 1.0)

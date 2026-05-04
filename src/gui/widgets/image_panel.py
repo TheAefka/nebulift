@@ -3,10 +3,7 @@ from astropy.io import fits
 import numpy as np
 
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
-                               QGroupBox, QFormLayout, QDoubleSpinBox,
-                               QFileDialog, QHBoxLayout, QLabel, QComboBox,
-                               QSlider, QSpinBox, QScrollArea)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea)
 from PySide6.QtCore import Qt, Slot, QEvent
 from PySide6.QtGui import QPixmap, QImage
 from backend.classify import DIFFUSE, COMPACT
@@ -18,6 +15,7 @@ class ImagePanel(QWidget):
         self._pan_start = None
         self._current_image_data = None
         self._current_class_map = None
+        self._current_id_map = None
         self._overlay_toggled = False
 
         self.layout = QVBoxLayout(self)
@@ -57,13 +55,18 @@ class ImagePanel(QWidget):
             height, width = normalized.shape
             return QImage(normalized.data, width, height, width, QImage.Format_Grayscale8)
     
-    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, preserve_zoom: bool = False):
+    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, id_map: np.ndarray = None, preserve_zoom: bool = False):
         self._current_image_data = (image_data * 255.0).clip(0, 255).astype(np.uint8)
         if class_map is not None:
             self._current_class_map = class_map
+        if id_map is not None:
+            self._current_id_map = id_map
         self._render_image(preserve_zoom=preserve_zoom)
 
     def _render_image(self, preserve_zoom = False):
+        if self._current_image_data is None:
+            return
+
         if self._overlay_toggled and self._current_class_map is not None:
             qimage = self._build_classif_overlay()
         else:
@@ -89,10 +92,15 @@ class ImagePanel(QWidget):
         grey = self._current_image_data
         height, width = grey.shape
         rgb = np.stack([grey, grey, grey], axis=2).astype(np.float32)
+        alpha = 0.3
         for class_value in [DIFFUSE, COMPACT]:
             mask = self._current_class_map == class_value
             if mask.any():
-                rgb[mask] = (np.array([(class_value==COMPACT)*255, (class_value==DIFFUSE)*255, 0], dtype=np.float32))
+                r = (class_value == COMPACT) * 255 * alpha + grey[mask] * (1 - alpha)
+                g = (class_value == DIFFUSE) * 255 * alpha + grey[mask] * (1 - alpha)
+                b = grey[mask]
+                rgb[mask] = np.stack([r, g, b], axis=1)
+                # rgb[mask] = (np.array([(class_value==COMPACT)*255, (class_value==DIFFUSE)*255, 0], dtype=np.float32))
         image_array = np.ascontiguousarray(rgb.clip(0, 255).astype(np.uint8))
         return QImage(image_array.data, width, height, 3 * width, QImage.Format_RGB888)
     
