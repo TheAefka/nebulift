@@ -62,6 +62,8 @@ def apply_adaptive_stretch(image: np.ndarray,
                         black_point: float = 0.001,
                         compact_label: int = 1,
                         diffuse_label: int = 0,
+                        sig_ancs = None,
+                        id_to_type_lut = None
                         ) -> np.ndarray:
     image = np.asarray(image, dtype=np.float32)
 

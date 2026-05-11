@@ -3,47 +3,54 @@ import pandas as pd
 from PySide6.QtCore import QThread, Signal
 
 from backend.pipeline import run_mto
-from backend.classify import classify_objects, COMPACT, DIFFUSE, UNCLASSIFIED
-from backend.stretch import apply_adaptive_stretch, asinh_stretch
+from backend.classify import classify_objects, COMPACT, DIFFUSE
+from backend.stretch import apply_adaptive_stretch
 
 class processingWorker(QThread):
     finished_success = Signal(np.ndarray, np.ndarray, np.ndarray, dict) 
     finished_error = Signal(str)
+    status_update = Signal(str)
     
-    def __init__(self, fits_path, mto_params, class_params, stretch_params):
+    def __init__(self, class_params, stretch_params, fits_path = None, mto_params = None, mto_results = None):
         super().__init__()
         self.fits_path = fits_path
         self.mto_params = mto_params
         self.class_params = class_params
         self.stretch_params = stretch_params
-    
+        self.mto_results = mto_results
+
     def run(self):
         try:
-            # MTOlib
-            mto_results = run_mto(
-                self.fits_path,
-                alpha=self.mto_params.get('alpha', 1e-6),
-                bg_mean=self.mto_params.get('bg_mean', None),
-                bg_variance=self.mto_params.get('bg_variance', -1.0),
-                gain=self.mto_params.get('gain', -1.0),
-                min_distance=self.mto_params.get('min_distance', 0.0),
-                move_factor=self.mto_params.get('move_factor', 0.5),
-                soft_bias=self.mto_params.get('soft_bias', 0.0),
-                verbosity=1
-            )
-            image = mto_results['image']
+            if self.mto_results is None and self.fits_path is not None and self.mto_params is not None:
+                # MTOlib
+                self.status_update.emit("Building Max-Tree...")
+
+                self.mto_results = run_mto(
+                    fits_path=self.fits_path,
+                    alpha=self.mto_params.get('alpha', 1e-6),
+                    bg_mean=self.mto_params.get('bg_mean', None),
+                    bg_variance=self.mto_params.get('bg_variance', -1.0),
+                    gain=self.mto_params.get('gain', -1.0),
+                    min_distance=self.mto_params.get('min_distance', 0.0),
+                    move_factor=self.mto_params.get('move_factor', 0.5),
+                    soft_bias=self.mto_params.get('soft_bias', 0.0),
+                    verbosity=1
+                )
+            image = self.mto_results['image']
 
             image_parameters = pd.DataFrame(
-                mto_results['image_parameters'][1:],
-                columns=mto_results['image_parameters'][0]
+                self.mto_results['image_parameters'][1:],
+                columns=self.mto_results['image_parameters'][0]
             )
 
             # Classification
+            self.status_update.emit("Classifying Objects...")
             r_threshold = self.class_params.get('r_fwhm_threshold', None)
             classified_parameters = classify_objects(image_parameters, r_fwhm_threshold=r_threshold)
 
             # Pixel-level class map
-            id_map = mto_results['id_map'].astype(np.int64, copy=False)
+            self.status_update.emit("Building Class Map for each pixel...")
+            id_map = self.mto_results['id_map'].astype(np.int64, copy=False)
             object_ids = classified_parameters['ID'].to_numpy(dtype=np.int64, copy=False)
             object_types = classified_parameters['source_type'].to_numpy(dtype=np.int8, copy=False)
 
@@ -60,14 +67,17 @@ class processingWorker(QThread):
             class_map[valid_pixels] = id_to_type_lut[id_map[valid_pixels]]
 
             # Stretch
+            self.status_update.emit("Applying Adaptative Stretching...")
             b_stretch = self.stretch_params.get('background', 5.0)
             c_stretch = self.stretch_params.get('compact', 100.0)
             d_stretch = self.stretch_params.get('diffuse', 10.0)
             bp = self.stretch_params.get('black_point', 0.001)
 
+            sig_ancs = self.mto_results['sig_ancs']
+
             stretched_image = apply_adaptive_stretch(
-                image,
-                id_map=mto_results['id_map'],
+                image=image,
+                id_map=self.mto_results['id_map'],
                 class_map=class_map,
                 bg_stretch_factor=b_stretch,
                 diffuse_stretch_factor=d_stretch,
@@ -75,60 +85,13 @@ class processingWorker(QThread):
                 black_point=bp,
                 compact_label=COMPACT,
                 diffuse_label=DIFFUSE,
+                sig_ancs=sig_ancs,
+                id_to_type_lut=id_to_type_lut
             )
 
             # Return np.ndarray to GUI
-            self.finished_success.emit(stretched_image, class_map, id_map, mto_results)
+            self.finished_success.emit(stretched_image, class_map, id_map, self.mto_results)
 
         except Exception as e:
             import traceback
-            self.finished_error.emit(f"{str(e)}\n\n traceback.format_exec()")
-
-
-
-class stretchWorker(QThread):
-    finished_success = Signal(np.ndarray, np.ndarray, np.ndarray)
-
-    def __init__(self, mto_results, class_params, stretch_params):
-        super().__init__()
-        self.mto_results = mto_results
-        self.class_params = class_params
-        self.stretch_params = stretch_params
-
-    def run(self):
-        # cached data
-        img = self.mto_results['image']
-        id_map = self.mto_results['id_map'].astype(np.int64)
-        image_parameters = pd.DataFrame(
-            self.mto_results['image_parameters'][1:],
-            columns=self.mto_results['image_parameters'][0]
-        )
-
-        # Re-classify
-        r_threshold = self.class_params.get('r_fwhm_threshold')
-        classified_params = classify_objects(image_parameters, r_threshold)
-
-        # Re-build class map
-        object_ids = classified_params['ID'].to_numpy(dtype=np.int64)
-        object_types = classified_params['source_type'].to_numpy(dtype=np.int8)
-        
-        max_id = max(int(id_map.max()), int(object_ids.max()) if object_ids.size else 0)
-        lut = np.full(max_id + 1, -1, dtype=np.int8)
-        lut[object_ids[object_ids >= 0]] = object_types[object_ids >= 0]
-
-        class_map = np.full(id_map.shape, -1, dtype=np.int8)
-        class_map[id_map >= 0] = lut[id_map[id_map >= 0]]
-
-        # Re-stretch
-        stretched = apply_adaptive_stretch(
-            img,
-            id_map=id_map,
-            class_map=class_map,
-            bg_stretch_factor=self.stretch_params['background'],
-            diffuse_stretch_factor=self.stretch_params['diffuse'],
-            compact_stretch_factor=self.stretch_params['compact'],
-            black_point=self.stretch_params['black_point'],
-            compact_label=COMPACT,
-            diffuse_label=DIFFUSE,
-        )
-        self.finished_success.emit(stretched, class_map, id_map)
+            self.finished_error.emit(f"{str(e)}\n\n {traceback.format_exc()}")

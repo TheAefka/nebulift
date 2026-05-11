@@ -5,7 +5,7 @@ import numpy as np
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea)
 from PySide6.QtCore import Qt, Slot, QEvent
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtGui import QPixmap, QImage, QCursor
 from backend.classify import DIFFUSE, COMPACT
 
 class ImagePanel(QWidget):
@@ -17,6 +17,7 @@ class ImagePanel(QWidget):
         self._current_class_map = None
         self._current_id_map = None
         self._overlay_toggled = False
+        self._current_sig_ancs = None
 
         self.layout = QVBoxLayout(self)
 
@@ -55,12 +56,15 @@ class ImagePanel(QWidget):
             height, width = normalized.shape
             return QImage(normalized.data, width, height, width, QImage.Format_Grayscale8)
     
-    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, id_map: np.ndarray = None, preserve_zoom: bool = False):
+    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, id_map: np.ndarray = None, sig_ancs: np.ndarray = None, preserve_zoom: bool = False):
         self._current_image_data = (image_data * 255.0).clip(0, 255).astype(np.uint8)
         if class_map is not None:
             self._current_class_map = class_map
         if id_map is not None:
             self._current_id_map = id_map
+        if sig_ancs is not None:
+            self._current_sig_ancs = sig_ancs
+
         self._render_image(preserve_zoom=preserve_zoom)
 
     def _render_image(self, preserve_zoom = False):
@@ -145,8 +149,8 @@ class ImagePanel(QWidget):
         # Zoom in/out with ctrl+scroll
         if event.type() == QEvent.Type.Wheel:
             if event.modifiers() & Qt.ControlModifier:
-                mouse_pos = event.position()
-                old_pos = self.image_label.mapFrom(self.scroll_area.viewport(), mouse_pos.toPoint())
+                mouse_pos = self.scroll_area.viewport().mapFromGlobal(QCursor.pos())
+                old_pos = self.image_label.mapFrom(self.scroll_area.viewport(), mouse_pos)
                 factor = 1.1 if event.angleDelta().y() > 0 else 0.9
                 self._scale_image(factor)
 
@@ -163,6 +167,25 @@ class ImagePanel(QWidget):
                 event.accept()
                 return True  # == Event handled
         
+        # Trackpad pinch zoom
+        if event.type() == QEvent.Type.NativeGesture:
+            if event.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
+                mouse_pos = self.scroll_area.viewport().mapFromGlobal(QCursor.pos())
+                old_pos = self.image_label.mapFrom(self.scroll_area.viewport(), mouse_pos)
+                factor = 1.0 + event.value()
+                self._scale_image(factor)
+
+                new_pos = old_pos * factor
+                delta = new_pos - old_pos
+                self.scroll_area.horizontalScrollBar().setValue(
+                    self.scroll_area.horizontalScrollBar().value() + delta.x()
+                )
+                self.scroll_area.verticalScrollBar().setValue(
+                    self.scroll_area.verticalScrollBar().value() + delta.y()
+                )
+
+                return True
+
         return super().eventFilter(source, event)
 
     def fit_to_view(self):
