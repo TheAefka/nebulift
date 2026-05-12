@@ -36,10 +36,10 @@ class MainWindow(QMainWindow):
         openAction = fileMenu.addAction("Open")
         exitAction = fileMenu.addAction("Exit")
         
-        zoomInAction = viewMenu.addAction("Zoom In")
+        zoomInAction = viewMenu.addAction("Zoom In (Ctrl+=)")
         zoomInAction.setShortcuts([QKeySequence("Ctrl+="), QKeySequence("Ctrl++")])
         zoomInAction.triggered.connect(self._zoom_in)
-        zoomOutAction = viewMenu.addAction("Zoom Out")
+        zoomOutAction = viewMenu.addAction("Zoom Out (Ctrl+-)")
         zoomOutAction.setShortcut(QKeySequence.StandardKey.ZoomOut)
         zoomOutAction.triggered.connect(self._zoom_out)
 
@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
 
         self.leftPanel.process_requested.connect(self.start_processing)
         self.cached_mto_results = None
+        self.cached_stretched_image = None
         self.leftPanel.parameters_changed.connect(self.update_stretch)
         self.leftPanel.overlay_toggled.connect(self.imagePanel._set_overlay)
 
@@ -113,7 +114,14 @@ class MainWindow(QMainWindow):
     def on_processing_success(self, stretched_image_array, class_map, id_map, mto_results):
         self.leftPanel.setEnabled(True)
         self.cached_mto_results = mto_results
-        self.imagePanel.load_numpy_array(stretched_image_array, class_map=class_map, id_map=id_map, sig_ancs=mto_results['sig_ancs'],)
+        self.cached_stretched_image = stretched_image_array
+        self.imagePanel.load_numpy_array(
+            stretched_image_array,
+            class_map=class_map,
+            id_map=id_map,
+            sig_ancs=mto_results['sig_ancs'],
+            original_image=mto_results.get('image')
+        )
         self.imagePanel.fit_to_view()
         self.worker.deleteLater()
 
@@ -137,5 +145,9 @@ class MainWindow(QMainWindow):
         self.stretch_worker.start()
     
     def _on_stretch_finished(self, new_image, class_map, id_map, sig_ancs):
-        self.imagePanel.load_numpy_array(new_image, class_map=class_map, id_map=id_map, sig_ancs=sig_ancs, preserve_zoom=True)
+        self.cached_stretched_image = new_image
+        orig = None
+        if self.cached_mto_results is not None:
+            orig = self.cached_mto_results.get('image')
+        self.imagePanel.load_numpy_array(new_image, class_map=class_map, id_map=id_map, sig_ancs=sig_ancs, preserve_zoom=True, original_image=orig)
         self.leftPanel.setEnabled(True)

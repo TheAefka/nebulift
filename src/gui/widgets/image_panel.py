@@ -17,6 +17,7 @@ class ImagePanel(QWidget):
         self._current_class_map = None
         self._current_id_map = None
         self._overlay_toggled = False
+        self._original_image = None
         self._current_sig_ancs = None
 
         self.layout = QVBoxLayout(self)
@@ -28,12 +29,18 @@ class ImagePanel(QWidget):
         self.image_label = QLabel("No Image Loaded")
         self.image_label.setScaledContents(True)
         self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setMouseTracking(True)
 
         self.scroll_area.setWidget(self.image_label)
         self.layout.addWidget(self.scroll_area)
 
+        # Coordinate display
+        self._coord_label = QLabel("")
+        self.layout.addWidget(self._coord_label)
+
         self.scroll_area.installEventFilter(self)
         self.scroll_area.viewport().installEventFilter(self)
+        self.scroll_area.setMouseTracking(True)
 
     def load_file(self, file_path):
         pixmap = QPixmap(self._convert_fits_to_qimage(file_path))
@@ -56,7 +63,7 @@ class ImagePanel(QWidget):
             height, width = normalized.shape
             return QImage(normalized.data, width, height, width, QImage.Format_Grayscale8)
     
-    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, id_map: np.ndarray = None, sig_ancs: np.ndarray = None, preserve_zoom: bool = False):
+    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, id_map: np.ndarray = None, sig_ancs: np.ndarray = None, preserve_zoom: bool = False, original_image: np.ndarray = None):
         self._current_image_data = (image_data * 255.0).clip(0, 255).astype(np.uint8)
         if class_map is not None:
             self._current_class_map = class_map
@@ -64,6 +71,8 @@ class ImagePanel(QWidget):
             self._current_id_map = id_map
         if sig_ancs is not None:
             self._current_sig_ancs = sig_ancs
+        if original_image is not None:
+            self._original_image = np.asarray(original_image, dtype=np.float32)
 
         self._render_image(preserve_zoom=preserve_zoom)
 
@@ -129,6 +138,25 @@ class ImagePanel(QWidget):
                 return True
         
         elif event.type() == QEvent.Type.MouseMove:
+            # Update coordinate display
+            viewport_pos = event.position().toPoint()
+            image_pos = self.image_label.mapFrom(
+                self.scroll_area.viewport(),
+                viewport_pos
+            )
+            img_x = int(image_pos.x() / self.scale_factor)
+            img_y = int(image_pos.y() / self.scale_factor)
+            pixmap = self.image_label.pixmap()
+            
+            if pixmap:
+                if (
+                    0 <= img_x < pixmap.width()
+                    and 0 <= img_y < pixmap.height()
+                ):
+                    self._coord_label.setText(f"x: {img_x}, y: {img_y}")
+                else:
+                    self._coord_label.setText("")
+
             if self._pan_start is not None:
                 delta = event.globalPosition().toPoint() - self._pan_start
                 self._pan_start = event.globalPosition().toPoint()

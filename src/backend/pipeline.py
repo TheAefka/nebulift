@@ -56,7 +56,7 @@ def run_mto(
     id_map, sig_ancs, mto_struct = mto.filter_tree(mt, processed_image, params)
 
     # Relabel objects for clearer visualisation
-    id_map = mto.relabel_segments(id_map, shuffle_labels=False)
+    # id_map = mto.relabel_segments(id_map, shuffle_labels=False)
 
     # Generate output files
     if write_image:
