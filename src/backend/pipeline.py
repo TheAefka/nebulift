@@ -72,6 +72,7 @@ def run_mto(
         'processed_image': processed_image,
         'id_map': id_map,
         'sig_ancs': sig_ancs,
+        'mto_struct': mto_struct,
         'params': params,
         'image_parameters': get_image_parameters(masked_image, id_map.ravel(),
                                                  sig_ancs.ravel(), params),

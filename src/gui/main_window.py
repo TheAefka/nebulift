@@ -120,7 +120,8 @@ class MainWindow(QMainWindow):
             class_map=class_map,
             id_map=id_map,
             sig_ancs=mto_results['sig_ancs'],
-            original_image=mto_results.get('image')
+            original_image=mto_results.get('image'),
+            mto_struct=mto_results['mto_struct']
         )
         self.imagePanel.fit_to_view()
         self.worker.deleteLater()

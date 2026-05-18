@@ -85,7 +85,7 @@ class processingWorker(QThread):
                 black_point=bp,
                 compact_label=COMPACT,
                 diffuse_label=DIFFUSE,
-                sig_ancs=sig_ancs,
+                mto_struct=self.mto_results['mto_struct'],
                 id_to_type_lut=id_to_type_lut
             )
 
