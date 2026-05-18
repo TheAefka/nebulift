@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
         self.leftPanel.setEnabled(False)
 
         self.worker = processingWorker(fits_path=fits_path, mto_params=mto_params, class_params=class_params, stretch_params=stretch_params)
-        self.worker.status_update.connect(self.imagePanel.image_label.setText)
+        self.worker.status_update.connect(self.imagePanel.coord_label.setText)
         self.worker.finished_success.connect(self.on_processing_success)
         self.worker.finished_error.connect(self.on_processing_error)
         self.worker.start()
@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
     def on_processing_error(self, error_msg):
         self.leftPanel.setEnabled(True)
         QMessageBox.critical(self, "Pipeline Error", error_msg)
-        self.imagePanel.image_label.setText("Error during processing.")
+        self.imagePanel.coord_label.setText("Error during processing.")
         self.worker.deleteLater()
 
     def update_stretch(self, classif, stretch):

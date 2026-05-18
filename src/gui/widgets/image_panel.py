@@ -3,9 +3,9 @@ from astropy.io import fits
 import numpy as np
 
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QScrollArea, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem)
 from PySide6.QtCore import Qt, Slot, QEvent
-from PySide6.QtGui import QPixmap, QImage, QCursor
+from PySide6.QtGui import QPainter, QPixmap, QImage, QCursor, QColor
 from backend.classify import DIFFUSE, COMPACT
 
 class ImagePanel(QWidget):
@@ -16,40 +16,43 @@ class ImagePanel(QWidget):
         self._current_image_data = None
         self._current_class_map = None
         self._current_id_map = None
+        self._current_mto_struct = None
         self._overlay_toggled = False
         self._original_image = None
         self._current_sig_ancs = None
+        self._pixel_selected = None
 
         self.layout = QVBoxLayout(self)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(False)
-        self.scroll_area.setAlignment(Qt.AlignCenter)
+        self.view = QGraphicsView()
+        self.scene = QGraphicsScene()
+        self.view.setScene(self.scene)
 
-        self.image_label = QLabel("No Image Loaded")
-        self.image_label.setScaledContents(True)
-        self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setMouseTracking(True)
+        self.view.setRenderHint(QPainter.Antialiasing, False)
+        self.view.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, True)
+        self.view.setOptimizationFlag(QGraphicsView.DontSavePainterState, True)
+        self.view.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
 
-        self.scroll_area.setWidget(self.image_label)
-        self.layout.addWidget(self.scroll_area)
+        self.pixmap_item = QGraphicsPixmapItem()
+        self.pixmap_item.setTransformationMode(Qt.FastTransformation)
+        self.scene.addItem(self.pixmap_item)
 
         # Coordinate display
-        self._coord_label = QLabel("")
-        self.layout.addWidget(self._coord_label)
+        self.coord_label = QLabel("")
+        self.layout.addWidget(self.coord_label)
 
-        self.scroll_area.installEventFilter(self)
-        self.scroll_area.viewport().installEventFilter(self)
-        self.scroll_area.setMouseTracking(True)
+        self.view.setMouseTracking(True)
+        self.layout.addWidget(self.view)
+        self.view.viewport().installEventFilter(self)
+        
 
     def load_file(self, file_path):
-        pixmap = QPixmap(self._convert_fits_to_qimage(file_path))
-        if not pixmap.isNull():
-            self.image_label.setPixmap(pixmap)
+        qimg = self._convert_fits_to_qimage(file_path)
+        if not qimg.isNull():
+            self.pixmap_item.setPixmap(QPixmap.fromImage(qimg))
             self.scale_factor = 1.0
-            self.image_label.adjustSize()
         else:
-            self.image_label.setText("Failed to load image.")
+            self.coord_label.setText("Failed to load image.")
     
     def _convert_fits_to_qimage(self, fits_path):
         with fits.open(fits_path) as fits_image:
@@ -63,7 +66,7 @@ class ImagePanel(QWidget):
             height, width = normalized.shape
             return QImage(normalized.data, width, height, width, QImage.Format_Grayscale8)
     
-    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, id_map: np.ndarray = None, sig_ancs: np.ndarray = None, preserve_zoom: bool = False, original_image: np.ndarray = None):
+    def load_numpy_array(self, image_data: np.ndarray, class_map: np.ndarray = None, id_map: np.ndarray = None, sig_ancs: np.ndarray = None, preserve_zoom: bool = False, original_image: np.ndarray = None, mto_struct = None):
         self._current_image_data = (image_data * 255.0).clip(0, 255).astype(np.uint8)
         if class_map is not None:
             self._current_class_map = class_map
@@ -71,6 +74,8 @@ class ImagePanel(QWidget):
             self._current_id_map = id_map
         if sig_ancs is not None:
             self._current_sig_ancs = sig_ancs
+        if mto_struct is not None:
+            self._current_mto_struct = mto_struct
         if original_image is not None:
             self._original_image = np.asarray(original_image, dtype=np.float32)
 
@@ -88,18 +93,18 @@ class ImagePanel(QWidget):
         self.image_label.setPixmap(QPixmap.fromImage(qimage))
 
         if preserve_zoom:
-            new_size = self.image_label.pixmap().size() * self.scale_factor
-            self.image_label.resize(new_size)
+            new_size = self.pixmap_item.pixmap().size() * self.scale_factor
+            self.pixmap_item.setPixmap(self.pixmap_item.pixmap().scaled(new_size))
         else:
             self.scale_factor = 1.0
-            self.image_label.adjustSize()
+            self.pixmap_item.setPixmap(self.pixmap_item.pixmap().scaled(self.scale_factor))
 
     
     def _scale_image(self, factor):
-        if self.image_label.pixmap():
+        if self.pixmap_item.pixmap():
             self.scale_factor *= factor
-            new_size = self.image_label.pixmap().size() * self.scale_factor
-            self.image_label.resize(new_size)
+            self.view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+            self.view.scale(factor, factor)
 
     def _build_classif_overlay(self) -> QImage:
         grey = self._current_image_data
@@ -134,37 +139,33 @@ class ImagePanel(QWidget):
         if event.type() == QEvent.Type.MouseButtonPress:
             if event.button() == Qt.MiddleButton:
                 self._pan_start = event.globalPosition().toPoint()
-                self.scroll_area.viewport().setCursor(Qt.ClosedHandCursor)
+                self.view.viewport().setCursor(Qt.ClosedHandCursor)
                 return True
         
         elif event.type() == QEvent.Type.MouseMove:
             # Update coordinate display
-            viewport_pos = event.position().toPoint()
-            image_pos = self.image_label.mapFrom(
-                self.scroll_area.viewport(),
-                viewport_pos
-            )
-            img_x = int(image_pos.x() / self.scale_factor)
-            img_y = int(image_pos.y() / self.scale_factor)
-            pixmap = self.image_label.pixmap()
+            scene_pos = self.view.mapToScene(event.pos())
+            img_x = int(scene_pos.x())
+            img_y = int(scene_pos.y())
+            pixmap = self.pixmap_item.pixmap()
             
             if pixmap:
                 if (
                     0 <= img_x < pixmap.width()
                     and 0 <= img_y < pixmap.height()
                 ):
-                    self._coord_label.setText(f"x: {img_x}, y: {img_y}")
+                    self.coord_label.setText(f"x: {img_x}, y: {img_y}")
                 else:
-                    self._coord_label.setText("")
+                    self.coord_label.setText("")
 
             if self._pan_start is not None:
                 delta = event.globalPosition().toPoint() - self._pan_start
                 self._pan_start = event.globalPosition().toPoint()
-                self.scroll_area.horizontalScrollBar().setValue(
-                    self.scroll_area.horizontalScrollBar().value() - delta.x()
+                self.view.horizontalScrollBar().setValue(
+                    self.view.horizontalScrollBar().value() - delta.x()
                 )
-                self.scroll_area.verticalScrollBar().setValue(
-                    self.scroll_area.verticalScrollBar().value() - delta.y()
+                self.view.verticalScrollBar().setValue(
+                    self.view.verticalScrollBar().value() - delta.y()
                 )
                 return True
 
@@ -177,59 +178,27 @@ class ImagePanel(QWidget):
         # Zoom in/out with ctrl+scroll
         if event.type() == QEvent.Type.Wheel:
             if event.modifiers() & Qt.ControlModifier:
-                mouse_pos = self.scroll_area.viewport().mapFromGlobal(QCursor.pos())
-                old_pos = self.image_label.mapFrom(self.scroll_area.viewport(), mouse_pos)
                 factor = 1.1 if event.angleDelta().y() > 0 else 0.9
                 self._scale_image(factor)
-
-                new_pos = old_pos * factor
-                delta = new_pos - old_pos
-
-                self.scroll_area.horizontalScrollBar().setValue(
-                    self.scroll_area.horizontalScrollBar().value() + delta.x()
-                )
-                self.scroll_area.verticalScrollBar().setValue(
-                    self.scroll_area.verticalScrollBar().value() + delta.y()
-                )
-
                 event.accept()
-                return True  # == Event handled
-        
+                return True
+
         # Trackpad pinch zoom
         if event.type() == QEvent.Type.NativeGesture:
             if event.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
-                mouse_pos = self.scroll_area.viewport().mapFromGlobal(QCursor.pos())
-                old_pos = self.image_label.mapFrom(self.scroll_area.viewport(), mouse_pos)
                 factor = 1.0 + event.value()
                 self._scale_image(factor)
-
-                new_pos = old_pos * factor
-                delta = new_pos - old_pos
-                self.scroll_area.horizontalScrollBar().setValue(
-                    self.scroll_area.horizontalScrollBar().value() + delta.x()
-                )
-                self.scroll_area.verticalScrollBar().setValue(
-                    self.scroll_area.verticalScrollBar().value() + delta.y()
-                )
-
                 return True
 
         return super().eventFilter(source, event)
 
     def fit_to_view(self):
-        if not self.image_label.pixmap():
+        if not self.pixmap_item.pixmap():
             return
-        
-        view_size = self.size()
-        pix_size = self.image_label.pixmap().size()
-
-        factor = min(view_size.width() / pix_size.width(), 
-                     view_size.height() / pix_size.height())
-        
-        self.set_zoom(factor * 0.95)
+        self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
     
     def set_zoom(self, factor):
-        if self.image_label.pixmap():
-            self.scale_factor = factor
-            new_size = self.image_label.pixmap().size() * self.scale_factor
-            self.image_label.resize(new_size)
+        self.view.resetTransform()
+        self.scale_factor = 1.0
+        self._scale_image(factor)
+
