@@ -38,32 +38,23 @@ def get_direct_parent(obj_id: int, id_map_flat: np.ndarray, nodes, img_data) -> 
 def process_pixel_value(image, obj_id, id_map_flat, nodes, img_data, image_flat, class_map, idx, bg_factor, diff_factor, compact_factor, black_point=0.001):
     # Background pixel
     if obj_id < 0:
-        return asinh_stretch(image[idx], bg_factor, black_point)
+        return asinh_stretch(image_flat[idx], bg_factor, black_point)
     
     parent_val, parent_obj, parent_idx = get_direct_parent(obj_id, id_map_flat, nodes, img_data)
     child_label = class_map.ravel()[obj_id]
     child_stretch_factor = bg_factor if child_label < 0 else (diff_factor if child_label == DIFFUSE else compact_factor)
+
     if parent_obj >= 0:
         # Stacked objects
-        parent_value = image_flat[parent_idx]
-        parent_value_stretched = process_pixel_value(image, parent_obj, id_map_flat, nodes, img_data, image_flat, class_map, idx, bg_factor, diff_factor, compact_factor, black_point)
-
-        child_value = image[idx]
-        child_contribution = child_value - parent_value
-        child_contribution_stretched = asinh_stretch(child_contribution, child_stretch_factor, black_point)
-
-        result = parent_value_stretched + child_contribution_stretched
+        parent_value_stretched = process_pixel_value(image, parent_obj, id_map_flat, nodes, img_data, image_flat, class_map, parent_idx, bg_factor, diff_factor, compact_factor, black_point)
     else:
         # Standalone object, parent is background
-        bg_contribution = asinh_stretch(parent_val, bg_factor, black_point)
-        
-        child_value = image[idx]
-        child_contribution = child_value - parent_val
-        child_contribution_stretched = asinh_stretch(child_contribution, child_stretch_factor, black_point)
-        
-        result = bg_contribution + child_contribution_stretched
+        parent_value_stretched = asinh_stretch(parent_val, bg_factor, black_point)
 
-    return result
+    child_contribution = image_flat[idx] - parent_val
+    child_contribution_stretched = asinh_stretch(child_contribution, child_stretch_factor, black_point)
+
+    return parent_value_stretched + child_contribution_stretched
 
 
 
@@ -86,9 +77,15 @@ def apply_adaptive_stretch(
     img_data    = mto_struct.mt.contents.img.data
     id_map_flat = id_map.ravel()
     image_flat  = image.ravel()
+    bg_mask     = id_map < 0
 
     result = np.zeros_like(image, dtype=np.float32)
-    for idx in tqdm.tqdm(np.ndindex(image.shape), total=np.prod(image.shape), desc="Applying adaptive stretch"):
+    result[bg_mask] = asinh_stretch(image[bg_mask], bg_stretch_factor, black_point)
+
+    object_indices = np.argwhere(~bg_mask)
+    for idx in tqdm.tqdm(object_indices, total=len(object_indices), desc="Applying adaptive stretch"):
+        idx = tuple(idx)
         obj_id = id_map[idx]
-        result[idx] = process_pixel_value(image, obj_id, id_map_flat, nodes, img_data, image_flat, class_map, idx, bg_stretch_factor, diffuse_stretch_factor, compact_stretch_factor, black_point)
+        idx_flat = np.ravel_multi_index(idx, id_map.shape)
+        result[idx] = process_pixel_value(image, obj_id, id_map_flat, nodes, img_data, image_flat, class_map, idx_flat, bg_stretch_factor, diffuse_stretch_factor, compact_stretch_factor, black_point)
     return result
