@@ -1,6 +1,6 @@
 import numpy as np
 import tqdm
-from backend.classify import DIFFUSE, COMPACT
+from backend.classify import DIFFUSE, COMPACT, UNCLASSIFIED
 
 
 def asinh_stretch(x, stretch_factor=100.0, black_point=0.001):
@@ -42,7 +42,7 @@ def process_pixel_value(image, obj_id, id_map_flat, nodes, img_data, image_flat,
     
     parent_val, parent_obj, parent_idx = get_direct_parent(obj_id, id_map_flat, nodes, img_data)
     child_label = class_map.ravel()[obj_id]
-    child_stretch_factor = bg_factor if child_label < 0 else (diff_factor if child_label == DIFFUSE else compact_factor)
+    child_stretch_factor = bg_factor if child_label == UNCLASSIFIED else (diff_factor if child_label == DIFFUSE else compact_factor)
 
     if parent_obj >= 0:
         # Stacked objects

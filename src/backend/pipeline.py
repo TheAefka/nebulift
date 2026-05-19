@@ -67,6 +67,16 @@ def run_mto(
     # Mask NANs for parameter calculations
     masked_image = np.ma.array(processed_image, mask=np.isnan(processed_image))
 
+    image_parameters = get_image_parameters(masked_image, id_map.ravel(), sig_ancs.ravel(), params)
+
+    # Add A/B ratio while preserving the existing row-oriented output format.
+    headers = image_parameters[0]
+    a_index = headers.index('A')
+    b_index = headers.index('B')
+    headers.append('A/B')
+    for row in image_parameters[1:]:
+        row.append(row[a_index] / row[b_index] if row[b_index] != 0 else np.inf)
+
     return {
         'image': image,
         'processed_image': processed_image,
@@ -74,6 +84,5 @@ def run_mto(
         'sig_ancs': sig_ancs,
         'mto_struct': mto_struct,
         'params': params,
-        'image_parameters': get_image_parameters(masked_image, id_map.ravel(),
-                                                 sig_ancs.ravel(), params),
+        'image_parameters': image_parameters,
     }
