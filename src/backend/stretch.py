@@ -34,6 +34,14 @@ def get_direct_parent(obj_id: int, id_map_flat: np.ndarray, nodes, img_data) -> 
     parent_obj = id_map_flat[parent_idx]   # -1 == background
     return parent_val, parent_obj, parent_idx
 
+def find_root_parent(obj_id: int, id_map_flat: np.ndarray, nodes, img_data) -> tuple:
+    current_id = obj_id
+    parent_val = None
+    while current_id >= 0:
+        parent_idx = nodes[current_id].parent
+        parent_val = img_data[parent_idx]
+        current_id = id_map_flat[parent_idx]
+    return parent_val
 
 def process_pixel_value(image, obj_id, id_map_flat, nodes, img_data, image_flat, class_map, idx, bg_factor, diff_factor, compact_factor, black_point=0.001):
     # Background pixel
@@ -43,6 +51,10 @@ def process_pixel_value(image, obj_id, id_map_flat, nodes, img_data, image_flat,
     parent_val, parent_obj, parent_idx = get_direct_parent(obj_id, id_map_flat, nodes, img_data)
     child_label = class_map.ravel()[obj_id]
     child_stretch_factor = bg_factor if child_label == UNCLASSIFIED else (diff_factor if child_label == DIFFUSE else compact_factor)
+
+    if parent_obj >= 0 and child_label == DIFFUSE and class_map.ravel()[parent_obj] == DIFFUSE:
+        floor_val = find_root_parent(obj_id, id_map_flat, nodes, img_data)
+        return asinh_stretch(image_flat[idx] - floor_val, child_stretch_factor, black_point)
 
     if parent_obj >= 0:
         # Stacked objects
