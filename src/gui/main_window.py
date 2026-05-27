@@ -1,19 +1,18 @@
 import os
+from astropy.io import fits
+import numpy as np
 
-from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QWidget,
-                               QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-                               QSlider, QProgressBar, QComboBox, QCheckBox,
-                               QSplitter, QMessageBox, QDialog, QDialogButtonBox,
-                               QLayout, QFileDialog)
-from PySide6.QtGui import QIcon, QPixmap, QKeySequence
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout,
+                               QSplitter, QMessageBox, QFileDialog)
+from PySide6.QtGui import QIcon, QKeySequence
 
 from gui.widgets.about_dialog import AboutDialog
 from gui.widgets.settings_panel import SettingsPanel
 from gui.widgets.image_panel import ImagePanel
+from gui.widgets.object_info_panel import ObjectInfoPanel
 from gui.workers import processingWorker
 
-# TODO: switch to Qt Resource Files (.qrc)
+# TODO: switch to Qt Resource Files (.qrc)?
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class MainWindow(QMainWindow):
@@ -34,20 +33,32 @@ class MainWindow(QMainWindow):
         helpMenu = menuBar.addMenu("Help")
 
         openAction = fileMenu.addAction("Open")
+        openAction.setShortcut(QKeySequence.StandardKey.Open)
         exitAction = fileMenu.addAction("Exit")
+        exitAction.setShortcut(QKeySequence.StandardKey.Quit)
+
+        editMenu.addAction("Undo").setShortcut(QKeySequence.StandardKey.Undo)
+        editMenu.addAction("Redo").setShortcut(QKeySequence.StandardKey.Redo)
         
-        zoomInAction = viewMenu.addAction("Zoom In (Ctrl+=)")
+        zoomInIcon = QIcon(os.path.join(BASE_DIR, "resources", "icons", "zoom-in.png"))
+        zoomInAction = viewMenu.addAction(zoomInIcon, "Zoom In")
         zoomInAction.setShortcuts([QKeySequence("Ctrl+="), QKeySequence("Ctrl++")])
         zoomInAction.triggered.connect(self._zoom_in)
-        zoomOutAction = viewMenu.addAction("Zoom Out (Ctrl+-)")
+        zoomOutIcon = QIcon(os.path.join(BASE_DIR, "resources", "icons", "zoom-out.png"))
+        zoomOutAction = viewMenu.addAction(zoomOutIcon, "Zoom Out")
         zoomOutAction.setShortcut(QKeySequence.StandardKey.ZoomOut)
         zoomOutAction.triggered.connect(self._zoom_out)
+        resetZoomIcon = QIcon(os.path.join(BASE_DIR, "resources", "icons", "reset-zoom.png"))
+        resetZoomAction = viewMenu.addAction(resetZoomIcon, "Reset Zoom")
+        resetZoomAction.setShortcut(QKeySequence("Ctrl+0"))
+        resetZoomAction.triggered.connect(self._reset_zoom)
 
         openAction.triggered.connect(self.handle_open_image)
         exitAction.triggered.connect(self.close)
         
         aboutAction = helpMenu.addAction("About")
         aboutAction.triggered.connect(self._aboutMessage)
+        aboutAction.setShortcut(QKeySequence("F1"))
 
         # Content
         container = QWidget()
@@ -60,12 +71,14 @@ class MainWindow(QMainWindow):
 
         self.imagePanel = ImagePanel()
         self.leftPanel = SettingsPanel()
+        self.rightPanel = ObjectInfoPanel()
 
         self.leftPanel.open_requested.connect(self.handle_open_image)
         
         layout.addWidget(splitter)
         splitterLayout.addWidget(self.leftPanel)
         splitterLayout.addWidget(self.imagePanel)
+        splitterLayout.addWidget(self.rightPanel)
         splitter.setStretchFactor(1, 1)
 
         self.leftPanel.process_requested.connect(self.start_processing)
@@ -74,6 +87,9 @@ class MainWindow(QMainWindow):
         self.leftPanel.parameters_changed.connect(self.update_stretch)
         self.leftPanel.overlay_toggled.connect(self.imagePanel._set_overlay)
 
+        self.imagePanel.pixel_selected_data.connect(self.rightPanel.update_info)
+
+        self.original_image = None
 
     def _aboutMessage(self):
         dialog = AboutDialog(self)
@@ -90,10 +106,21 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.current_fits_path = file_path
-
+            self.original_image = self._load_original_image(file_path)
             self.imagePanel.load_file(file_path)
             self.imagePanel.fit_to_view()
             self.leftPanel.update_fits_display(file_path)
+
+    def _load_original_image(self, file_path):
+        try:
+            with fits.open(file_path) as f:
+                data = f[0].data.astype(np.float32)
+            # Move channel axis to the end
+            if data.ndim == 3 and data.shape[0] in (3, 4):
+                data = np.moveaxis(data, 0, -1)
+            return data
+        except Exception:
+            return None
 
     def _zoom_in(self):
         self.imagePanel.zoom_in()
@@ -101,11 +128,13 @@ class MainWindow(QMainWindow):
     def _zoom_out(self):
         self.imagePanel.zoom_out()
 
-    
+    def _reset_zoom(self):
+        self.imagePanel.fit_to_view()
+
     def start_processing(self, fits_path, mto_params, class_params, stretch_params):
         self.leftPanel.setEnabled(False)
 
-        self.worker = processingWorker(fits_path=fits_path, mto_params=mto_params, class_params=class_params, stretch_params=stretch_params)
+        self.worker = processingWorker(fits_path=fits_path, mto_params=mto_params, class_params=class_params, stretch_params=stretch_params, original_color_image=self.original_image)
         self.worker.status_update.connect(self.imagePanel.coord_label.setText)
         self.worker.finished_success.connect(self.on_processing_success)
         self.worker.finished_error.connect(self.on_processing_error)
@@ -119,9 +148,9 @@ class MainWindow(QMainWindow):
             stretched_image_array,
             class_map=class_map,
             id_map=id_map,
-            sig_ancs=mto_results['sig_ancs'],
-            original_image=mto_results.get('image'),
-            mto_struct=mto_results['mto_struct']
+            original_image=self.original_image,
+            mto_struct=mto_results['mto_struct'],
+            object_parameters=mto_results.get('object_parameters')
         )
         self.imagePanel.fit_to_view()
         self.worker.deleteLater()
@@ -145,10 +174,16 @@ class MainWindow(QMainWindow):
         self.stretch_worker.finished_success.connect(self._on_stretch_finished)
         self.stretch_worker.start()
     
-    def _on_stretch_finished(self, new_image, class_map, id_map, sig_ancs):
+    def _on_stretch_finished(self, new_image, class_map, id_map, mto_results):
         self.cached_stretched_image = new_image
-        orig = None
-        if self.cached_mto_results is not None:
-            orig = self.cached_mto_results.get('image')
-        self.imagePanel.load_numpy_array(new_image, class_map=class_map, id_map=id_map, sig_ancs=sig_ancs, preserve_zoom=True, original_image=orig)
+        self.cached_mto_results = mto_results
+        self.imagePanel.load_numpy_array(
+            new_image,
+            class_map=class_map,
+            id_map=id_map,
+            preserve_zoom=True,
+            original_image=self.original_image,
+            mto_struct=mto_results.get('mto_struct'),
+            object_parameters=mto_results.get('object_parameters')
+        )
         self.leftPanel.setEnabled(True)

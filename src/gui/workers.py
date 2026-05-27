@@ -11,13 +11,14 @@ class processingWorker(QThread):
     finished_error = Signal(str)
     status_update = Signal(str)
     
-    def __init__(self, class_params, stretch_params, fits_path = None, mto_params = None, mto_results = None):
+    def __init__(self, class_params, stretch_params, fits_path = None, mto_params = None, mto_results = None, original_color_image = None):
         super().__init__()
         self.fits_path = fits_path
         self.mto_params = mto_params
         self.class_params = class_params
         self.stretch_params = stretch_params
         self.mto_results = mto_results
+        self.original_color_image = original_color_image
 
     def run(self):
         try:
@@ -36,6 +37,11 @@ class processingWorker(QThread):
                     soft_bias=self.mto_params.get('soft_bias', 0.0),
                     verbosity=1
                 )
+            
+            if self.original_color_image is not None:
+                self.mto_results['original_color_image'] = self.original_color_image
+            color_image = self.mto_results.get('original_color_image', None)
+            stretch_input = color_image if color_image is not None else self.mto_results['image']
             image = self.mto_results['image']
 
             image_parameters = pd.DataFrame(
@@ -46,7 +52,8 @@ class processingWorker(QThread):
             # Classification
             self.status_update.emit("Classifying Objects...")
             r_threshold = self.class_params.get('r_fwhm_threshold', None)
-            classified_parameters = classify_objects(image_parameters, r_fwhm_threshold=r_threshold)
+            a_b_threshold = self.class_params.get('a_b_threshold', None)
+            classified_parameters = classify_objects(image_parameters, r_fwhm_threshold=r_threshold, a_b_threshold=a_b_threshold)
 
             # Pixel-level class map
             self.status_update.emit("Building Class Map for each pixel...")
@@ -76,7 +83,7 @@ class processingWorker(QThread):
             sig_ancs = self.mto_results['sig_ancs']
 
             stretched_image = apply_adaptive_stretch(
-                image=image,
+                image=stretch_input,
                 id_map=self.mto_results['id_map'],
                 class_map=class_map,
                 bg_stretch_factor=b_stretch,
@@ -89,7 +96,12 @@ class processingWorker(QThread):
                 id_to_type_lut=id_to_type_lut
             )
 
-            # Return np.ndarray to GUI
+            if 'ID' in classified_parameters.columns:
+                df_indexed = classified_parameters.set_index('ID')
+                self.mto_results['object_parameters'] = df_indexed.to_dict(orient='index')
+            else:
+                self.mto_results['object_parameters'] = {}
+
             self.finished_success.emit(stretched_image, class_map, id_map, self.mto_results)
 
         except Exception as e:

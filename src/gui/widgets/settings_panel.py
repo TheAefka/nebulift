@@ -2,10 +2,9 @@ import os
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
                                QGroupBox, QFormLayout, QDoubleSpinBox,
-                               QFileDialog, QHBoxLayout, QLabel, QComboBox,
+                               QHBoxLayout, QLabel, QComboBox,
                                QSlider, QSpinBox)
 from PySide6.QtCore import Qt, Signal
-
 
 
 class SettingsPanel(QWidget):
@@ -205,13 +204,13 @@ class SettingsPanel(QWidget):
             'bg_variance': self.mto_bg_variance.value(),
             'gain': self.mto_gain.value(),
             'min_distance': self.mto_min_distance.value(),
-            'move_factor': self.mto_move_factor.value(),
             'soft_bias': self.mto_soft_bias.value(),
         }
 
         # Classification settings
         classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value()
+            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value(),
+            'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
         }
 
         # Stretch settings
@@ -242,7 +241,8 @@ class SettingsPanel(QWidget):
             return
 
         classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value()
+            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value(),
+            'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
         }
         stretch_params = {
             'background': self.classifControls["Background"]["spin"].value(),
