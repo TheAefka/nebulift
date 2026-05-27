@@ -11,6 +11,8 @@ class SettingsPanel(QWidget):
 
     open_requested = Signal()
     process_requested = Signal(str, dict, dict, dict)
+    stretch_requested = Signal(dict)
+    classification_requested = Signal(dict, dict)
     parameters_changed = Signal(dict, dict)
     overlay_toggled = Signal(bool)
 
@@ -25,13 +27,7 @@ class SettingsPanel(QWidget):
         self._setup_classification_group()
         self._setup_stretch_group()
 
-        self.apply_btn = QPushButton("Apply Classification/Stretch")
-        self.main_layout.addWidget(self.apply_btn)
-
         self.main_layout.addStretch()
-
-        # self._connect_signals()
-        self.apply_btn.clicked.connect(self._on_parameter_changed)
 
     def _setup_mtolib_group(self):
         # MTOlib settings
@@ -111,7 +107,12 @@ class SettingsPanel(QWidget):
         self.showClassificationOverlay = QCheckBox("Show Overlay?")
         self.showClassificationOverlay.toggled.connect(self.overlay_toggled)
         classifLayout.addRow(self.showClassificationOverlay)
-
+        
+        self.apply_classification_btn = QPushButton("Apply Classification")
+        self.apply_classification_btn.setEnabled(False)
+        self.apply_classification_btn.clicked.connect(self._emit_classification_request) 
+        classifLayout.addRow(self.apply_classification_btn)
+        
         self.main_layout.addWidget(classifGroup)
 
 
@@ -154,6 +155,11 @@ class SettingsPanel(QWidget):
         bp_slider, bp_spin, bp_row = self._create_stretch_row("Blackpoint", is_float=True, min_val=0.0, max_val=1.0, decimals=4)
         stretchLayout.addRow(bp_row)
         self.classifControls["Blackpoint"] = {"slider": bp_slider, "spin": bp_spin}
+
+        self.apply_stretch_btn = QPushButton("Apply Stretch")
+        self.apply_stretch_btn.setEnabled(False)
+        self.apply_stretch_btn.clicked.connect(self._emit_stretch_request)
+        stretchLayout.addRow(self.apply_stretch_btn)
 
         self.main_layout.addWidget(stretchGroup)
 
@@ -227,6 +233,15 @@ class SettingsPanel(QWidget):
             classif_params, 
             stretch_params
         )
+    
+    def _emit_stretch_request(self):
+        stretch_params = {
+            'background': self.classifControls["Background"]["spin"].value(),
+            'compact': self.classifControls["Compact"]["spin"].value(),
+            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
+            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+        }
+        self.stretch_requested.emit(stretch_params)
 
     # def _connect_signals(self):
     #     for cat in self.classifControls:
@@ -251,3 +266,16 @@ class SettingsPanel(QWidget):
             'black_point': self.classifControls["Blackpoint"]["spin"].value(),
         }
         self.parameters_changed.emit(classif_params, stretch_params)
+
+    def _emit_classification_request(self):
+        classif_params = {
+            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value(),
+            'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
+        }
+        stretch_params = {
+            'background': self.classifControls["Background"]["spin"].value(),
+            'compact': self.classifControls["Compact"]["spin"].value(),
+            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
+            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+        }
+        self.classification_requested.emit(classif_params, stretch_params)

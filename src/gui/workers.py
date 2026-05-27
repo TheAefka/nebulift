@@ -11,7 +11,17 @@ class processingWorker(QThread):
     finished_error = Signal(str)
     status_update = Signal(str)
     
-    def __init__(self, class_params, stretch_params, fits_path = None, mto_params = None, mto_results = None, original_color_image = None):
+    def __init__(
+        self,
+        class_params,
+        stretch_params,
+        fits_path = None,
+        mto_params = None,
+        mto_results = None,
+        original_color_image = None,
+        class_map = None,
+        reclassify = True
+    ):
         super().__init__()
         self.fits_path = fits_path
         self.mto_params = mto_params
@@ -19,6 +29,8 @@ class processingWorker(QThread):
         self.stretch_params = stretch_params
         self.mto_results = mto_results
         self.original_color_image = original_color_image
+        self.class_map = class_map
+        self.reclassify = reclassify
 
     def run(self):
         try:
@@ -42,7 +54,6 @@ class processingWorker(QThread):
                 self.mto_results['original_color_image'] = self.original_color_image
             color_image = self.mto_results.get('original_color_image', None)
             stretch_input = color_image if color_image is not None else self.mto_results['image']
-            image = self.mto_results['image']
 
             image_parameters = pd.DataFrame(
                 self.mto_results['image_parameters'][1:],
@@ -50,28 +61,56 @@ class processingWorker(QThread):
             )
 
             # Classification
-            self.status_update.emit("Classifying Objects...")
-            r_threshold = self.class_params.get('r_fwhm_threshold', None)
-            a_b_threshold = self.class_params.get('a_b_threshold', None)
-            classified_parameters = classify_objects(image_parameters, r_fwhm_threshold=r_threshold, a_b_threshold=a_b_threshold)
+            if self.reclassify:
+                self.status_update.emit("Classifying Objects...")
+                r_threshold = self.class_params.get('r_fwhm_threshold', None)
+                a_b_threshold = self.class_params.get('a_b_threshold', None)
+                classified_parameters = classify_objects(image_parameters, r_fwhm_threshold=r_threshold, a_b_threshold=a_b_threshold)
+                
+                class_counts = classified_parameters['source_type'].value_counts()
+                print("Classification Summary:")
+                for class_value, count in class_counts.items():
+                    class_name = "Unclassified"
+                    if class_value == DIFFUSE:
+                        class_name = "Diffuse"
+                    elif class_value == COMPACT:
+                        class_name = "Compact"
+                    print(f"  {class_name}: {count} objects")
 
-            # Pixel-level class map
-            self.status_update.emit("Building Class Map for each pixel...")
-            id_map = self.mto_results['id_map'].astype(np.int64, copy=False)
-            object_ids = classified_parameters['ID'].to_numpy(dtype=np.int64, copy=False)
-            object_types = classified_parameters['source_type'].to_numpy(dtype=np.int8, copy=False)
+                # Pixel-level class map
+                self.status_update.emit("Building Class Map for each pixel...")
+                id_map = self.mto_results['id_map'].astype(np.int64, copy=False)
+                object_ids = classified_parameters['ID'].to_numpy(dtype=np.int64, copy=False)
+                object_types = classified_parameters['source_type'].to_numpy(dtype=np.int8, copy=False)
 
-            max_id = int(id_map.max())
-            if object_ids.size:
-                max_id = max(max_id, int(object_ids.max()))
-            
-            id_to_type_lut = np.full(max_id + 1, -1, dtype=np.int8)
-            valid_object_rows = object_ids >= 0
-            id_to_type_lut[object_ids[valid_object_rows]] = object_types[valid_object_rows]
+                max_id = int(id_map.max())
+                if object_ids.size:
+                    max_id = max(max_id, int(object_ids.max()))
+                
+                id_to_type_lut = np.full(max_id + 1, -1, dtype=np.int8)
+                valid_object_rows = object_ids >= 0
+                id_to_type_lut[object_ids[valid_object_rows]] = object_types[valid_object_rows]
 
-            class_map = np.full(id_map.shape, -1, dtype=np.int8)
-            valid_pixels = id_map >= 0
-            class_map[valid_pixels] = id_to_type_lut[id_map[valid_pixels]]
+                class_map = np.full(id_map.shape, -1, dtype=np.int8)
+                valid_pixels = id_map >= 0
+                class_map[valid_pixels] = id_to_type_lut[id_map[valid_pixels]]
+            else:
+                if self.class_map is None:
+                    raise ValueError("Class map missing. Please reclassify objects.")
+                class_map = self.class_map
+                id_map = self.mto_results['id_map'].astype(np.int64, copy=False)
+                
+                id_to_type_lut = None
+                if 'object_parameters' in self.mto_results:
+                    max_id = int(id_map.max())
+                    obj_ids = list(self.mto_results['object_parameters'].keys())
+                    if obj_ids:
+                        max_id = max(max_id, max(obj_ids))
+                    id_to_type_lut = np.full(max_id + 1, -1, dtype=np.int8)
+                    for obj_id, params in self.mto_results['object_parameters'].items():
+                        if 'source_type' in params:
+                            id_to_type_lut[obj_id] = params['source_type']
+
 
             # Stretch
             self.status_update.emit("Applying Adaptative Stretching...")
@@ -79,8 +118,6 @@ class processingWorker(QThread):
             c_stretch = self.stretch_params.get('compact', 100.0)
             d_stretch = self.stretch_params.get('diffuse', 10.0)
             bp = self.stretch_params.get('black_point', 0.001)
-
-            sig_ancs = self.mto_results['sig_ancs']
 
             stretched_image = apply_adaptive_stretch(
                 image=stretch_input,
@@ -96,11 +133,13 @@ class processingWorker(QThread):
                 id_to_type_lut=id_to_type_lut
             )
 
-            if 'ID' in classified_parameters.columns:
-                df_indexed = classified_parameters.set_index('ID')
-                self.mto_results['object_parameters'] = df_indexed.to_dict(orient='index')
-            else:
-                self.mto_results['object_parameters'] = {}
+            if self.reclassify:
+                if 'ID' in classified_parameters.columns:
+                    df_indexed = classified_parameters.set_index('ID')
+                    self.mto_results['object_parameters'] = df_indexed.to_dict(orient='index')
+                else:
+                    self.mto_results['object_parameters'] = {}
+                self.mto_results['class_map'] = class_map
 
             self.finished_success.emit(stretched_image, class_map, id_map, self.mto_results)
 

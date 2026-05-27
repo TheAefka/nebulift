@@ -84,10 +84,16 @@ class MainWindow(QMainWindow):
         self.leftPanel.process_requested.connect(self.start_processing)
         self.cached_mto_results = None
         self.cached_stretched_image = None
-        self.leftPanel.parameters_changed.connect(self.update_stretch)
+        self.cached_class_map = None
+        self.cached_classification_params = None
+        self.cached_stretch_params = None
+        # self.leftPanel.parameters_changed.connect(self.update_stretch)
+        self.leftPanel.stretch_requested.connect(self.update_stretch)
+        self.leftPanel.classification_requested.connect(self.update_classification)
         self.leftPanel.overlay_toggled.connect(self.imagePanel._set_overlay)
 
         self.imagePanel.pixel_selected_data.connect(self.rightPanel.update_info)
+        self.rightPanel.reclassify_requested.connect(self.handle_reclassify)
 
         self.original_image = None
 
@@ -111,6 +117,20 @@ class MainWindow(QMainWindow):
             self.imagePanel.fit_to_view()
             self.leftPanel.update_fits_display(file_path)
 
+    def handle_reclassify(self, object_id, new_class):
+        if self.cached_mto_results is None:
+            return
+        
+        id_map = self.cached_mto_results['id_map'].astype(np.int64, copy=False)
+        self.cached_class_map[id_map == object_id] = new_class
+        self.cached_mto_results['class_map'] = self.cached_class_map
+
+        if 'object_parameters' in self.cached_mto_results:
+            if object_id in self.cached_mto_results['object_parameters']:
+                self.cached_mto_results['object_parameters'][object_id]['source_type'] = new_class
+
+        self.update_stretch(self.cached_stretch_params)
+
     def _load_original_image(self, file_path):
         try:
             with fits.open(file_path) as f:
@@ -133,6 +153,8 @@ class MainWindow(QMainWindow):
 
     def start_processing(self, fits_path, mto_params, class_params, stretch_params):
         self.leftPanel.setEnabled(False)
+        self.cached_classification_params = class_params
+        self.cached_stretch_params = stretch_params
 
         self.worker = processingWorker(fits_path=fits_path, mto_params=mto_params, class_params=class_params, stretch_params=stretch_params, original_color_image=self.original_image)
         self.worker.status_update.connect(self.imagePanel.coord_label.setText)
@@ -142,8 +164,12 @@ class MainWindow(QMainWindow):
 
     def on_processing_success(self, stretched_image_array, class_map, id_map, mto_results):
         self.leftPanel.setEnabled(True)
+        self.leftPanel.apply_classification_btn.setEnabled(True)
+        self.leftPanel.apply_stretch_btn.setEnabled(True)
         self.cached_mto_results = mto_results
         self.cached_stretched_image = stretched_image_array
+        self.cached_class_map = class_map
+        self.cached_mto_results['class_map'] = class_map
         self.imagePanel.load_numpy_array(
             stretched_image_array,
             class_map=class_map,
@@ -161,7 +187,8 @@ class MainWindow(QMainWindow):
         self.imagePanel.coord_label.setText("Error during processing.")
         self.worker.deleteLater()
 
-    def update_stretch(self, classif, stretch):
+    def update_classification(self, classif, stretch):
+        print("Updating classification with params:", classif)
         if self.cached_mto_results is None:
             return
         
@@ -171,12 +198,37 @@ class MainWindow(QMainWindow):
             self.stretch_worker.wait() # Wait for finished
 
         self.stretch_worker = processingWorker(mto_results=self.cached_mto_results, class_params=classif, stretch_params=stretch)
+        self.stretch_worker.finished_error.connect(self.on_processing_error)
+        self.stretch_worker.finished_success.connect(self._on_stretch_finished)
+        self.stretch_worker.start()
+
+    def update_stretch(self, stretch):
+        if self.cached_mto_results is None:
+            return
+        
+        self.leftPanel.setEnabled(False)
+        self.cached_stretch_params = stretch
+
+        if hasattr(self, 'stretch_worker') and self.stretch_worker.isRunning():
+            self.stretch_worker.wait() # Wait for finished
+    
+        self.stretch_worker = processingWorker(
+            mto_results=self.cached_mto_results,
+            class_params=self.cached_classification_params,
+            stretch_params=self.cached_stretch_params,
+            class_map=self.cached_class_map,
+            reclassify=False,
+            original_color_image=self.original_image
+        )
+        self.stretch_worker.finished_error.connect(self.on_processing_error)
         self.stretch_worker.finished_success.connect(self._on_stretch_finished)
         self.stretch_worker.start()
     
     def _on_stretch_finished(self, new_image, class_map, id_map, mto_results):
         self.cached_stretched_image = new_image
         self.cached_mto_results = mto_results
+        self.cached_class_map = class_map
+        self.cached_mto_results['class_map'] = class_map
         self.imagePanel.load_numpy_array(
             new_image,
             class_map=class_map,
