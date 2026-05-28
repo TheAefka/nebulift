@@ -18,6 +18,15 @@ class ObjectInfoPanel(QWidget):
 
         self.current_object_id = None
 
+        self.layout.addStretch()
+        self.layout.addWidget(QLabel("<b>Legend:</b>"))
+        self.layout.addLayout(self._create_legend_item("red", "Compact"))
+        self.layout.addLayout(self._create_legend_item("green", "Diffuse"))
+        self.layout.addLayout(self._create_legend_item("yellow", "Selected Object"))
+        self.layout.addLayout(self._create_legend_item("cyan", "Parent Object"))
+        self.layout.addLayout(self._create_legend_item("purple", "Direct Parent"))
+
+
         self.btn_layout = QHBoxLayout()
         self.btn_compact = QPushButton("Mark Compact")
         self.btn_diffuse = QPushButton("Mark Diffuse")
@@ -31,6 +40,15 @@ class ObjectInfoPanel(QWidget):
         self.btn_compact.setEnabled(False)
         self.btn_diffuse.setEnabled(False)
 
+
+    def _create_legend_item(self, color, label):
+        row_layout = QHBoxLayout()
+        color_rect = QLabel()
+        color_rect.setFixedSize(20, 15)
+        color_rect.setStyleSheet(f"background-color: {color}; border: 1px solid black;")
+        row_layout.addWidget(color_rect)
+        row_layout.addWidget(QLabel(label))
+        return row_layout
 
     @Slot(dict)
     def update_info(self, object_info: dict | None):
