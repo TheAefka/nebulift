@@ -199,7 +199,7 @@ def apply_adaptive_stretch(
 ) -> np.ndarray:
     image = np.asarray(image, dtype=np.float32)
     channels = image.shape[2] if image.ndim == 3 else 1
-    image_flat = image.reshape(-1, channels) if channels > 1 else image.ravel()[:, np.newaxis] # 
+    image_flat = image.reshape(-1, channels) if channels > 1 else image.ravel()[:, np.newaxis]
 
     nodes       = mto_struct.mt.contents.nodes
     img_data    = mto_struct.mt.contents.img.data
@@ -207,8 +207,8 @@ def apply_adaptive_stretch(
     bg_mask     = id_map_flat < 0
 
     result_flat = np.zeros_like(image_flat)
-    for c in range(channels):
-        result_flat[bg_mask, c] = asinh_stretch(image_flat[bg_mask, c], bg_stretch_factor, black_point)
+    
+    result_flat[bg_mask] = asinh_stretch(image_flat[bg_mask], bg_stretch_factor, black_point)
 
     stretch = Stretch(
         nodes=nodes,
@@ -262,49 +262,47 @@ def apply_adaptive_stretch(
         if obj.is_unclassified:
             if parent_obj is not None and parent_obj.is_diffuse:
                 root = parent_obj.root if parent_obj.is_stacked else parent_obj
-                for c in range(channels):
-                    result_flat[positions, c] = asinh_stretch(
-                        pixels[:, c] - root.value,
-                        obj.stretch_factor,
-                        black_point,
-                    )
-            elif parent_obj is not None and parent_obj.is_unclassified and parent_obj.root is not None:
-                for c in range(channels):
-                    result_flat[positions, c] = asinh_stretch(
-                        pixels[:, c] - parent_obj.root.value,
-                        obj.stretch_factor,
-                        black_point,
-                    )
-            else:
-                for c in range(channels):
-                    result_flat[positions, c] = floor_value[c] + asinh_stretch(
-                        pixels[:, c] - obj.value,
-                        obj.stretch_factor,
+                result_flat[positions] = asinh_stretch(
+                    pixels - root.value,
+                    obj.stretch_factor,
                     black_point,
+                )
+            elif parent_obj is not None and parent_obj.is_unclassified and parent_obj.root is not None:
+                result_flat[positions] = asinh_stretch(
+                    pixels - parent_obj.root.value,
+                    obj.stretch_factor,
+                    black_point,
+                )
+            else:
+                result_flat[positions] = floor_value + asinh_stretch(
+                    pixels - obj.value,
+                    obj.stretch_factor,
+                black_point,
                 )
         elif obj.is_compact and parent_obj is not None and parent_obj.is_diffuse:
-            for c in range(channels):
-                result_flat[positions, c] = floor_value[c] + asinh_stretch(
-                    pixels[:, c] - parent_obj.value,
-                    obj.stretch_factor,
-                    black_point,
-                )
+            result_flat[positions] = floor_value + asinh_stretch(
+                pixels - parent_obj.value,
+                obj.stretch_factor,
+                black_point,
+            )
         elif obj.is_stacked:
-            for c in range(channels):
-                result_flat[positions, c] = asinh_stretch(
-                    pixels[:, c] - obj.root_floor_value,
-                    obj.stretch_factor,
-                    black_point,
-                )
+            result_flat[positions] = asinh_stretch(
+                pixels - obj.root_floor_value,
+                obj.stretch_factor,
+                black_point,
+            )
         elif obj.stretch_factor == 0:
-            for c in range(channels):
-                result_flat[positions, c] = floor_value[c]
+            result_flat[positions] = floor_value
         else:
-            for c in range(channels):
-                result_flat[positions, c] = floor_value[c] + asinh_stretch(
-                    pixels[:, c] - obj.value,
-                    obj.stretch_factor,
-                    black_point,
-                )
+            result_flat[positions] = floor_value + asinh_stretch(
+                pixels - obj.value,
+                obj.stretch_factor,
+                black_point,
+            )
+
+    if channels > 1:
+        ratio = result_flat / (image_flat + 1e-6)
+        stretched = image_flat * ratio
+        return stretched.reshape(image.shape)
 
     return result_flat.reshape(image.shape)
