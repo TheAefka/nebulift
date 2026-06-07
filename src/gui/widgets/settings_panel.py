@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
                                QGroupBox, QFormLayout, QDoubleSpinBox,
                                QHBoxLayout, QLabel, QComboBox,
                                QSlider, QSpinBox)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSignalBlocker
 
 
 class SettingsPanel(QWidget):
@@ -152,7 +152,7 @@ class SettingsPanel(QWidget):
 
             self.classifControls[cat] = {"check": check, "spin": spin}
 
-        bp_slider, bp_spin, bp_row = self._create_stretch_row("Blackpoint", is_float=True, min_val=0.0, max_val=1.0, decimals=4)
+        bp_slider, bp_spin, bp_row = self._create_stretch_row("Blackpoint", is_float=True, min_val=0.0, max_val=0.2, decimals=4)
         stretchLayout.addRow(bp_row)
         self.classifControls["Blackpoint"] = {"slider": bp_slider, "spin": bp_spin}
 
@@ -165,7 +165,7 @@ class SettingsPanel(QWidget):
 
 
 
-    def _create_stretch_row(self, labelText, is_float=False, min_val=0, max_val=2000, decimals=4):
+    def _create_stretch_row(self, labelText, is_float=False, min_val=0, max_val=1000, decimals=4):
         rowWidget = QWidget()
         rowLayout = QHBoxLayout(rowWidget)
         rowLayout.setContentsMargins(0, 0, 0, 0)
@@ -178,12 +178,21 @@ class SettingsPanel(QWidget):
         if is_float:
             spinbox = QDoubleSpinBox(decimals=decimals)
             spinbox.setRange(min_val, max_val)
+            spinbox.setKeyboardTracking(False)
             multiplier = 10**decimals
             spinbox.setSingleStep(1.0 / multiplier)
             slider.setRange(int(min_val * multiplier), int(max_val * multiplier))
 
-            slider.valueChanged.connect(lambda v: spinbox.setValue(v / multiplier))
-            spinbox.valueChanged.connect(lambda v: slider.setValue(int(v * multiplier)))
+            def sync_spinbox(value):
+                with QSignalBlocker(spinbox):
+                    spinbox.setValue(value / multiplier)
+
+            def sync_slider(value):
+                with QSignalBlocker(slider):
+                    slider.setValue(int(round(value * multiplier)))
+
+            slider.valueChanged.connect(sync_spinbox)
+            spinbox.valueChanged.connect(sync_slider)
         else:
             spinbox = QSpinBox()
             spinbox.setRange(int(min_val), int(max_val))

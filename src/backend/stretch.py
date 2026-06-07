@@ -42,23 +42,19 @@ def group_pixels_by_object(id_map):
     return object_ids, sorted_pos, start_indices, counts
 
 
-
 @dataclass
 class Object:
     id: int
     label: int
-    value: float
-    root: "Object" = None
-    parent: "Object" = None
-    is_stacked: bool = False
-    root_floor_value: float = 0.0
-    stretch_factor: float = 0.0
-    stretched_floor_value: float = 0.0
+    saddle_raw: float
+    base_level: float
+    stretch_factor: float
+    black_point: float
 
     @property
     def is_diffuse(self):
         return self.label == DIFFUSE
-    
+
     @property
     def is_compact(self):
         return self.label == COMPACT
@@ -67,13 +63,13 @@ class Object:
     def is_unclassified(self):
         return self.label == UNCLASSIFIED
 
-    @property
-    def is_background(self):
-        return self.id < 0
-    
-    @property
-    def is_object(self):
-        return not self.is_background
+    def evaluate(self, pixels: np.ndarray) -> np.ndarray:
+        result = np.full(len(pixels), self.base_level, dtype=np.float32)
+        return result + asinh_stretch(pixels - self.saddle_raw, self.stretch_factor, self.black_point)
+
+    def evaluate_at(self, raw_value: float) -> float:
+        return float(self.base_level + asinh_stretch(raw_value - self.saddle_raw, self.stretch_factor, self.black_point))
+
 
 class Stretch:
     def __init__(
@@ -82,106 +78,78 @@ class Stretch:
         img_data,
         id_map_flat,
         class_map,
+        result_lum,
         bg_stretch_factor,
         diffuse_stretch_factor,
         compact_stretch_factor,
-        black_point=0.001,
-        id_to_type_lut=None
+        black_point,
+        bg_mode,
+        bg_offset,
+        id_to_type_lut=None,
     ):
         self.nodes = nodes
         self.img_data = img_data
         self.id_map_flat = id_map_flat
         self.class_map = class_map
+        self.result_lum = result_lum
         self.bg_stretch_factor = bg_stretch_factor
         self.diffuse_stretch_factor = diffuse_stretch_factor
         self.compact_stretch_factor = compact_stretch_factor
         self.black_point = black_point
+        self.bg_mode = bg_mode
+        self.bg_offset = bg_offset
         self.id_to_type_lut = id_to_type_lut
-        self.object_cache = {}
+        self._cache: dict[int, Object] = {}
 
-    
-    def get_label(self, obj_id):
-        if (self.id_to_type_lut is not None and 0 <= obj_id < len(self.id_to_type_lut)):
+    def get_label(self, obj_id: int) -> int:
+        if self.id_to_type_lut is not None and 0 <= obj_id < len(self.id_to_type_lut):
             return int(self.id_to_type_lut[obj_id])
         return int(self.class_map.ravel()[obj_id])
 
-
-    def get_stretch_factor(self, label):
-        if label == UNCLASSIFIED:
-            return self.bg_stretch_factor
-        elif label == DIFFUSE:
+    def get_stretch_factor(self, label: int) -> float:
+        if label == DIFFUSE:
             return self.diffuse_stretch_factor
-        elif label == COMPACT:
+        if label == COMPACT:
             return self.compact_stretch_factor
-        else:
-            return self.bg_stretch_factor  # Default to background stretch for unknown labels
+        return self.bg_stretch_factor
 
+    def compute_object(self, obj_id: int) -> Object:
+        if obj_id in self._cache:
+            return self._cache[obj_id]
 
-    def build_object(self, obj_id):
+        # Get parent details
         parent_idx = self.nodes[obj_id].parent
-        parent_val = float(self.img_data[parent_idx])
-        label = self.get_label(obj_id)
-        return Object(
-            id=obj_id,
-            label=label,
-            parent=None,
-            value=parent_val,
-            stretch_factor=self.get_stretch_factor(label)
-        )
-
-
-    def compute_object_info(self, object_id):
-        if object_id in self.object_cache:
-            return self.object_cache[object_id]
-
-        parent_idx = self.nodes[object_id].parent
-        parent_val = float(self.img_data[parent_idx])
+        saddle_raw = float(self.img_data[parent_idx])
         parent_obj_id = int(self.id_map_flat[parent_idx])
 
-        label = self.get_label(object_id)
+        label = self.get_label(obj_id)
+        sf = self.get_stretch_factor(label)
 
-        object = Object(
-            id=object_id,
-            label=label,
-            value=parent_val,
-            stretch_factor=self.get_stretch_factor(label)
-        )
-
+        
+        # Process parent object
         if parent_obj_id < 0:
-            # Parent is background
-            object.stretched_floor_value = asinh_stretch(parent_val, self.bg_stretch_factor, self.black_point)
+            # Parent is background.
+            parent_base = float(self.result_lum[parent_idx])
+            parent_label = None
         else:
-            parent = self.compute_object_info(parent_obj_id)
-            object.parent = parent
-            object.is_stacked = parent.is_diffuse and object.is_diffuse
+            parent_obj = self.compute_object(parent_obj_id)
+            parent_base = float(self.result_lum[parent_idx])
+            parent_label = parent_obj.label
+            if label == parent_label:
+                saddle_raw = parent_obj.saddle_raw
+                parent_base = parent_obj.base_level
+        effective_sf = sf
 
-            if object.is_unclassified:
-                object.stretch_factor = parent.stretch_factor
-                if parent.is_diffuse:
-                    object.root = parent.root if parent.is_stacked else parent
-                    object.root_floor_value = object.root.value
-                    object.stretched_floor_value = asinh_stretch(
-                        parent_val - object.root_floor_value,
-                        object.stretch_factor,
-                        self.black_point,
-                    )
-                else:
-                    object.stretched_floor_value = parent.stretched_floor_value
-                    object.root_floor_value = parent.root_floor_value
-            elif object.is_stacked:
-                # Nested/stacked diffuse objects. Stretch relative to root parent value.
-                object.root = parent.root if parent.is_stacked else parent
-                object.root_floor_value = object.root.value
-                object.stretched_floor_value = asinh_stretch(parent_val - object.root_floor_value, object.stretch_factor, self.black_point)
-            else:
-                # Other objects. Stretch relative to parent.
-                object.stretched_floor_value = parent.stretched_floor_value + asinh_stretch(parent_val - parent.value, parent.stretch_factor, self.black_point)
-
-        # Add to cache
-        self.object_cache[object_id] = object
-
-        return object
-
+        obj = Object(
+            id=obj_id,
+            label=label,
+            saddle_raw=saddle_raw,
+            base_level=parent_base,
+            stretch_factor=effective_sf,
+            black_point=self.black_point,
+        )
+        self._cache[obj_id] = obj
+        return obj
 
 
 def apply_adaptive_stretch(
@@ -192,6 +160,7 @@ def apply_adaptive_stretch(
     diffuse_stretch_factor: float,
     compact_stretch_factor: float,
     black_point: float = 0.001,
+    bg_offset_fraction: float = 0.5,
     compact_label: int = COMPACT,
     diffuse_label: int = DIFFUSE,
     mto_struct=None,
@@ -201,108 +170,68 @@ def apply_adaptive_stretch(
     channels = image.shape[2] if image.ndim == 3 else 1
     image_flat = image.reshape(-1, channels) if channels > 1 else image.ravel()[:, np.newaxis]
 
-    nodes       = mto_struct.mt.contents.nodes
-    img_data    = mto_struct.mt.contents.img.data
+    nodes = mto_struct.mt.contents.nodes
+    img_data = mto_struct.mt.contents.img.data
     id_map_flat = id_map.ravel()
-    bg_mask     = id_map_flat < 0
-
-    result_flat = np.zeros_like(image_flat)
-    
-    result_flat[bg_mask] = asinh_stretch(image_flat[bg_mask], bg_stretch_factor, black_point)
-
-    stretch = Stretch(
-        nodes=nodes,
-        img_data=img_data,
-        id_map_flat=id_map_flat,
-        class_map=class_map,
-        bg_stretch_factor=bg_stretch_factor,
-        diffuse_stretch_factor=diffuse_stretch_factor,
-        compact_stretch_factor=compact_stretch_factor,
-        black_point=black_point,
-        id_to_type_lut=id_to_type_lut
-    )
-
     object_ids, sorted_positions, start_indices, counts = group_pixels_by_object(id_map_flat)
 
+    depth_cache: dict[int, int] = {} # dict[obj_id, depth]
 
-    def get_object_depth(obj_id, depth_cache):
+    def get_object_depth(obj_id):
         if obj_id in depth_cache:
             return depth_cache[obj_id]
-        
         parent_idx = nodes[obj_id].parent
         parent_obj = id_map_flat[parent_idx]
-
-        if parent_obj < 0:
-            depth = 0
-        else:
-            depth = 1 + get_object_depth(parent_obj, depth_cache)
-
+        depth = 0 if parent_obj < 0 else 1 + get_object_depth(int(parent_obj))
         depth_cache[obj_id] = depth
         return depth
 
-    depth_cache = {}
-    ordered_object_ids = np.argsort(
-        [get_object_depth(obj_id, depth_cache) for obj_id in object_ids]
-    )
-    object_ids = object_ids[ordered_object_ids]
-    start_indices = start_indices[ordered_object_ids]
-    counts = counts[ordered_object_ids]
+    order = np.argsort([get_object_depth(int(oid)) for oid in object_ids])
+    object_ids = object_ids[order]
+    start_indices = start_indices[order]
+    counts = counts[order]
 
+    def stretch_scalar_plane(plane_flat: np.ndarray) -> np.ndarray:
+        bg_mask = id_map_flat < 0
 
-    for obj_id, start_idx, count in zip(object_ids, start_indices, counts):
-        obj = stretch.compute_object_info(obj_id)
-        positions = sorted_positions[start_idx : start_idx + count]
-        pixels = image_flat[positions]
+        # Background: offset + asinh with bp=0 to keep noise texture intact.
+        bg_mode = compute_background_mode(plane_flat[bg_mask]) if bg_mask.any() else 0.0
+        bg_offset = bg_mode * bg_offset_fraction
 
-        parent_idx = nodes[obj_id].parent
-        parent_obj_id = int(id_map_flat[parent_idx])
-        parent_obj = stretch.compute_object_info(parent_obj_id) if parent_obj_id >= 0 else None
-        floor_value = result_flat[parent_idx]
+        result_plane = np.empty(len(plane_flat), dtype=np.float32)
+        result_plane[bg_mask] = bg_offset + asinh_stretch(
+            plane_flat[bg_mask] - bg_mode, bg_stretch_factor, black_point=0.0
+        )
 
-        if obj.is_unclassified:
-            if parent_obj is not None and parent_obj.is_diffuse:
-                root = parent_obj.root if parent_obj.is_stacked else parent_obj
-                result_flat[positions] = asinh_stretch(
-                    pixels - root.value,
-                    obj.stretch_factor,
-                    black_point,
-                )
-            elif parent_obj is not None and parent_obj.is_unclassified and parent_obj.root is not None:
-                result_flat[positions] = asinh_stretch(
-                    pixels - parent_obj.root.value,
-                    obj.stretch_factor,
-                    black_point,
-                )
-            else:
-                result_flat[positions] = floor_value + asinh_stretch(
-                    pixels - obj.value,
-                    obj.stretch_factor,
-                black_point,
-                )
-        elif obj.is_compact and parent_obj is not None and parent_obj.is_diffuse:
-            result_flat[positions] = floor_value + asinh_stretch(
-                pixels - parent_obj.value,
-                obj.stretch_factor,
-                black_point,
-            )
-        elif obj.is_stacked:
-            result_flat[positions] = asinh_stretch(
-                pixels - obj.root_floor_value,
-                obj.stretch_factor,
-                black_point,
-            )
-        elif obj.stretch_factor == 0:
-            result_flat[positions] = floor_value
-        else:
-            result_flat[positions] = floor_value + asinh_stretch(
-                pixels - obj.value,
-                obj.stretch_factor,
-                black_point,
-            )
+        stretch = Stretch(
+            nodes=nodes,
+            img_data=img_data,
+            id_map_flat=id_map_flat,
+            class_map=class_map,
+            result_lum=result_plane,
+            bg_stretch_factor=bg_stretch_factor,
+            diffuse_stretch_factor=diffuse_stretch_factor,
+            compact_stretch_factor=compact_stretch_factor,
+            black_point=black_point,
+            bg_mode=bg_mode,
+            bg_offset=bg_offset,
+            id_to_type_lut=id_to_type_lut,
+        )
+
+        for obj_id, start_idx, count in zip(object_ids, start_indices, counts):
+            obj = stretch.compute_object(int(obj_id))
+            positions = sorted_positions[start_idx: start_idx + count]
+            pixels = plane_flat[positions]
+            result_plane[positions] = obj.evaluate(pixels)
+
+        return result_plane
 
     if channels > 1:
-        ratio = result_flat / (image_flat + 1e-6)
-        stretched = image_flat * ratio
-        return stretched.reshape(image.shape)
+        result_channels = []
+        for channel_index in range(channels):
+            result_channels.append(stretch_scalar_plane(image_flat[:, channel_index]))
+        result_flat = np.stack(result_channels, axis=1)
+    else:
+        result_flat = stretch_scalar_plane(image_flat[:, 0])[:, np.newaxis]
 
-    return result_flat.reshape(image.shape)
+    return np.clip(result_flat.reshape(image.shape), 0.0, 1.0)
