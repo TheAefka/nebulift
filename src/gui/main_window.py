@@ -117,6 +117,15 @@ class MainWindow(QMainWindow):
             self.imagePanel.fit_to_view()
             self.leftPanel.update_fits_display(file_path)
 
+            # Reset state
+            self.cached_mto_results = None
+            self.cached_stretched_image = None
+            self.cached_class_map = None
+            self.cached_classification_params = None
+            self.cached_stretch_params = None
+            self.leftPanel.apply_classification_btn.setEnabled(False)
+            self.leftPanel.apply_stretch_btn.setEnabled(False)
+
     def handle_reclassify(self, object_id, new_class):
         if self.cached_mto_results is None:
             return
