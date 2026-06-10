@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
                                QSlider, QSpinBox)
 from PySide6.QtCore import Qt, Signal, QSignalBlocker
 
+from gui.widgets.collapse import Collapse
+
 
 class SettingsPanel(QWidget):
 
@@ -31,7 +33,7 @@ class SettingsPanel(QWidget):
 
     def _setup_mtolib_group(self):
         # MTOlib settings
-        mtolibGroup = QGroupBox("MTOlib Settings")
+        mtolibGroup = Collapse("MTOlib Settings")
         mtolibLayout = QFormLayout()
 
         self.mto_fits_path = QPushButton("Open")
@@ -75,7 +77,9 @@ class SettingsPanel(QWidget):
         mtolibLayout.addRow("Soft bias", self.mto_soft_bias)
         mtolibLayout.addRow("Run MTObjects", self.mto_build_btn)
         
-        mtolibGroup.setLayout(mtolibLayout)
+        # mtolibGroup.setLayout(mtolibLayout)
+        # self.main_layout.addWidget(mtolibGroup)
+        mtolibGroup.content_layout.addLayout(mtolibLayout)
         self.main_layout.addWidget(mtolibGroup)
 
         self.mto_bg_mean_checkbox.toggled.connect(self.mto_bg_mean.setEnabled)
@@ -91,12 +95,12 @@ class SettingsPanel(QWidget):
 
     
     def _setup_classification_group(self):
-        classifGroup = QGroupBox("Classification Settings")
-        classifLayout = QFormLayout(classifGroup)
+        classifGroup = Collapse("Classification Settings", toggled=False)
+        classifLayout = QFormLayout()
 
         self.classifControls = {}
 
-        categories = ["R_whfm", "A/B"]
+        categories = ["R_fwhm", "A/B"]
 
         for cat in categories:
             check, spin, row_ui = self._create_classification_row(cat)
@@ -113,6 +117,7 @@ class SettingsPanel(QWidget):
         self.apply_classification_btn.clicked.connect(self._emit_classification_request) 
         classifLayout.addRow(self.apply_classification_btn)
         
+        classifGroup.content_layout.addLayout(classifLayout)
         self.main_layout.addWidget(classifGroup)
 
 
@@ -137,8 +142,8 @@ class SettingsPanel(QWidget):
 
 
     def _setup_stretch_group(self):
-        stretchGroup = QGroupBox("Stretch Settings")
-        stretchLayout = QFormLayout(stretchGroup)
+        stretchGroup = Collapse("Stretch Settings")
+        stretchLayout = QFormLayout()
 
         self.stretchFuncComboBox = QComboBox()
         self.stretchFuncComboBox.addItems(["asinh"])
@@ -150,17 +155,18 @@ class SettingsPanel(QWidget):
             check, spin, row_ui = self._create_stretch_row(cat)
             stretchLayout.addRow(row_ui)
 
-            self.classifControls[cat] = {"check": check, "spin": spin}
+            bp_slider, bp_spin, bp_row = self._create_stretch_row("Blackpoint", is_float=True, min_val=0.0, max_val=0.2, decimals=4)
+            stretchLayout.addRow(bp_row)
 
-        bp_slider, bp_spin, bp_row = self._create_stretch_row("Blackpoint", is_float=True, min_val=0.0, max_val=0.2, decimals=4)
-        stretchLayout.addRow(bp_row)
-        self.classifControls["Blackpoint"] = {"slider": bp_slider, "spin": bp_spin}
+            self.classifControls[cat] = {"check": check, "spin": spin}
+            self.classifControls["Blackpoint_" + cat] = {"slider": bp_slider, "spin": bp_spin}
 
         self.apply_stretch_btn = QPushButton("Apply Stretch")
         self.apply_stretch_btn.setEnabled(False)
         self.apply_stretch_btn.clicked.connect(self._emit_stretch_request)
         stretchLayout.addRow(self.apply_stretch_btn)
 
+        stretchGroup.content_layout.addLayout(stretchLayout)
         self.main_layout.addWidget(stretchGroup)
 
 
@@ -224,7 +230,7 @@ class SettingsPanel(QWidget):
 
         # Classification settings
         classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value(),
+            'r_fwhm_threshold': self.classifControls["R_fwhm"]["spin"].value(),
             'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
         }
 
@@ -233,7 +239,9 @@ class SettingsPanel(QWidget):
             'background': self.classifControls["Background"]["spin"].value(),
             'compact': self.classifControls["Compact"]["spin"].value(),
             'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
+            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
+            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
         }
 
         self.process_requested.emit(
@@ -248,7 +256,9 @@ class SettingsPanel(QWidget):
             'background': self.classifControls["Background"]["spin"].value(),
             'compact': self.classifControls["Compact"]["spin"].value(),
             'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
+            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
+            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
         }
         self.stretch_requested.emit(stretch_params)
 
@@ -265,26 +275,30 @@ class SettingsPanel(QWidget):
             return
 
         classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value(),
+            'r_fwhm_threshold': self.classifControls["R_fwhm"]["spin"].value(),
             'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
         }
         stretch_params = {
             'background': self.classifControls["Background"]["spin"].value(),
             'compact': self.classifControls["Compact"]["spin"].value(),
             'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
+            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
+            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
         }
         self.parameters_changed.emit(classif_params, stretch_params)
 
     def _emit_classification_request(self):
         classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_whfm"]["spin"].value(),
+            'r_fwhm_threshold': self.classifControls["R_fwhm"]["spin"].value(),
             'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
         }
         stretch_params = {
             'background': self.classifControls["Background"]["spin"].value(),
             'compact': self.classifControls["Compact"]["spin"].value(),
             'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'black_point': self.classifControls["Blackpoint"]["spin"].value(),
+            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
+            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
+            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
         }
         self.classification_requested.emit(classif_params, stretch_params)
