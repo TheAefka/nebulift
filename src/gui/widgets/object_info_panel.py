@@ -81,6 +81,16 @@ class ObjectInfoPanel(QWidget):
             f"<b>X:</b> {object_info.get('x', '')}<br>"
             f"<b>Y:</b> {object_info.get('y', '')}<br>"
             f"<b>Value:</b> {object_info.get('value', '')}<br>"
+            f"<b>Stretched Value:</b> {object_info.get('stretched_value', '')}<br>"
+            "<br><b>Parent Object:</b><br>"
+            f"<b>Parent ID:</b> {object_info.get('parent_id', '')}<br>"
+            f"<b>Parent Classification:</b> {classification_labels.get(object_info.get('parent_class'), object_info.get('parent_class', ''))}<br>"
+            "<br><b>Direct Parent:</b><br>"
+            f"<b>Direct Parent X:</b> {object_info.get('direct_parent_x', '')}<br>"
+            f"<b>Direct Parent Y:</b> {object_info.get('direct_parent_y', '')}<br>"
+            f"<b>Direct Parent Value:</b> {object_info.get('direct_parent_value', '')}<br>"
+            f"<b>Direct Parent Stretched Value:</b> {object_info.get('direct_parent_stretched_value', '')}<br>"
+            "<br><b>Properties:</b><br>"
         )
 
         for key, value in properties.items():

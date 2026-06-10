@@ -20,6 +20,19 @@ def get_file_extension(filename):
         return None
 
 
+def collapse_color_image(img):
+    """Collapse RGB(A) FITS cubes to a 2D intensity image."""
+
+    if img.ndim == 3:
+        if img.shape[0] in (3, 4):
+            img = np.moveaxis(img, 0, -1)
+
+        if img.shape[-1] in (3, 4):
+            img = np.nanmean(img, axis=-1)
+
+    return img
+
+
 def read_fits_file(filename):
     """Open a .fits file.
        Return the first data frame as a numpy array.
@@ -43,6 +56,8 @@ def read_fits_file(filename):
                 sys.exit(1)
 
         hdulist.close()
+
+        img_data = collapse_color_image(img_data)
 
         if img_data.dtype != np.double:
             img_data = img_data.astype(np.float64)
@@ -96,6 +111,8 @@ def read_fits_hdu(catalog_filename, hdu_filename, hdu_index, write=False):
 
         img = hdu.data
         hdulist.close()
+
+        img = collapse_color_image(img)
 
         if img.dtype != np.double:
             img = img.astype(np.float64)

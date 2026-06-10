@@ -21,7 +21,7 @@ class ImagePanel(QWidget):
         self._current_mto_struct = None
         self._overlay_toggled = False
         self._original_image = None
-        self._pixel_selected = None
+        self.pixel_selected = None
 
         self.layout = QVBoxLayout(self)
 
@@ -246,7 +246,7 @@ class ImagePanel(QWidget):
                     x = int(coords_text[0].split(':')[1].strip())
                     y = int(coords_text[1].split(':')[1].strip())
                     
-                    self._pixel_selected = (x, y)
+                    self.pixel_selected = (x, y)
                     self._render_image(preserve_zoom=True)
 
                     info = {
@@ -254,14 +254,21 @@ class ImagePanel(QWidget):
                         'y': y, 
                         'obj_id': None, 
                         'obj_class': None, 
+                        'parent_id': None,
+                        'parent_class': None,
                         'value': None, 
+                        'stretched_value': None,
+                        'direct_parent_x': None,
+                        'direct_parent_y': None,
+                        'direct_parent_value': None,
+                        'direct_parent_stretched_value': None,
                         'properties': {}
                     }
                     
                     if 0 <= y < self._original_image.shape[0] and 0 <= x < self._original_image.shape[1]:
                         pixel_val = self._original_image[y, x]
                         info['value'] = float(np.mean(pixel_val))
-                    
+                        info['stretched_value'] = float(np.mean(self._current_image_data[y, x]))
                     obj_id = None
                     if 0 <= y < self._current_id_map.shape[0] and 0 <= x < self._current_id_map.shape[1]:
                         raw_id = self._current_id_map[y, x]
@@ -275,11 +282,36 @@ class ImagePanel(QWidget):
                     if obj_id in self._object_parameters:
                         info['properties'] = self._object_parameters[obj_id]
 
+                    if obj_id is not None and self._current_mto_struct is not None:
+                        try:
+                            nodes = self._current_mto_struct.mt.contents.nodes
+                            img_data = self._current_mto_struct.mt.contents.img.data
+                            id_map_flat = self._current_id_map.ravel()
+                            _, p_obj, p_idx = self.get_direct_parent(obj_id, id_map_flat, nodes, img_data)
+                            if p_idx >= 0 and p_idx < id_map_flat.size:
+                                py, px = np.unravel_index(p_idx, self._current_id_map.shape)
+                                py = (self._current_id_map.shape[0] - 1) - py
+                                info['direct_parent_x'] = int(px)
+                                info['direct_parent_y'] = int(py)
+                                info['direct_parent_value'] = float(self._original_image[py, px].mean())
+                                info['direct_parent_stretched_value'] = float(self._current_image_data[py, px].mean())
+                                try:
+                                    info['parent_id'] = int(p_obj) if p_obj is not None and not np.isnan(p_obj) and p_obj >= 0 else None
+                                except Exception:
+                                    info['parent_id'] = p_obj
+                                if info['parent_id'] is not None and self._current_class_map is not None:
+                                    try:
+                                        info['parent_class'] = int(self._current_class_map[py, px])
+                                    except Exception:
+                                        info['parent_class'] = None
+                        except Exception:
+                            pass
+
                     self.pixel_selected_data.emit(info)
                     return True
             
             elif event.button() == Qt.RightButton:
-                self._pixel_selected = None
+                self.pixel_selected = None
                 self._render_image(preserve_zoom=True)
                 self.pixel_selected_data.emit({})
                 return True
@@ -316,13 +348,13 @@ class ImagePanel(QWidget):
 
 
     def _build_selection_overlay_array(self):
-        if self._pixel_selected is None or self._current_id_map is None:
+        if self.pixel_selected is None or self._current_id_map is None:
             return None
         
         h, w = self._current_id_map.shape
         overlay = np.zeros((h, w, 4), dtype=np.uint8)
 
-        x, y = self._pixel_selected
+        x, y = self.pixel_selected
         if not (0 <= x < w and 0 <= y < h):
             return None
         
