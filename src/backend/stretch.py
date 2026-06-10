@@ -306,21 +306,26 @@ def apply_adaptive_stretch(
 
     if channels > 1:
         # Coloured images
+
+        # Weights used by Siril for "human perceptual color balance" (https://siril.readthedocs.io/en/latest/processing/stretching.html#asinh-transformation)
         weights = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
         lum_flat = np.dot(image_flat, weights)
 
         stretched_lum_flat = stretch_scalar_plane(lum_flat)
 
-        ratio = np.zeros_like(lum_flat)
-        valid_mask = lum_flat > 1e-8
-        ratio[valid_mask] = stretched_lum_flat[valid_mask] / lum_flat[valid_mask]
+        image_shifted = np.clip(image_flat - blackpoint_background, 0.0, None)
+        lum_shifted = np.clip(lum_flat - blackpoint_background, 0.0, None)
 
-        result_flat = image_flat * ratio[:, np.newaxis]
+        ratio = np.zeros_like(lum_shifted)
+        valid_mask = lum_shifted > np.finfo(np.float32).eps
+        ratio[valid_mask] = stretched_lum_flat[valid_mask] / lum_shifted[valid_mask]
 
-        # max_vals = np.max(result_flat, axis=1)
-        # clip_mask = max_vals > 1.0
-        # if clip_mask.any():
-        #     result_flat[clip_mask] = result_flat[clip_mask] / max_vals[clip_mask, np.newaxis]
+        result_flat = image_shifted * ratio[:, np.newaxis]
+
+        max_vals = np.max(result_flat, axis=1)
+        clip_mask = max_vals > 1.0
+        if clip_mask.any():
+            result_flat[clip_mask] = result_flat[clip_mask] / max_vals[clip_mask, np.newaxis]
 
     else:
         # Greyscale images
