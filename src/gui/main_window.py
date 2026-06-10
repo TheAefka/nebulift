@@ -10,7 +10,7 @@ from gui.widgets.about_dialog import AboutDialog
 from gui.widgets.settings_panel import SettingsPanel
 from gui.widgets.image_panel import ImagePanel
 from gui.widgets.object_info_panel import ObjectInfoPanel
-from gui.workers import processingWorker
+from gui.workers import ProcessingWorker
 
 # TODO: switch to Qt Resource Files (.qrc)?
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -165,7 +165,7 @@ class MainWindow(QMainWindow):
         self.cached_classification_params = class_params
         self.cached_stretch_params = stretch_params
 
-        self.worker = processingWorker(fits_path=fits_path, mto_params=mto_params, class_params=class_params, stretch_params=stretch_params, original_color_image=self.original_image)
+        self.worker = ProcessingWorker(fits_path=fits_path, mto_params=mto_params, class_params=class_params, stretch_params=stretch_params, original_color_image=self.original_image)
         self.worker.status_update.connect(self.imagePanel.coord_label.setText)
         self.worker.finished_success.connect(self.on_processing_success)
         self.worker.finished_error.connect(self.on_processing_error)
@@ -206,7 +206,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'stretch_worker') and self.stretch_worker.isRunning():
             self.stretch_worker.wait() # Wait for finished
 
-        self.stretch_worker = processingWorker(mto_results=self.cached_mto_results, class_params=classif, stretch_params=stretch)
+        self.stretch_worker = ProcessingWorker(mto_results=self.cached_mto_results, class_params=classif, stretch_params=stretch)
         self.stretch_worker.finished_error.connect(self.on_processing_error)
         self.stretch_worker.finished_success.connect(self._on_stretch_finished)
         self.stretch_worker.start()
@@ -221,7 +221,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'stretch_worker') and self.stretch_worker.isRunning():
             self.stretch_worker.wait() # Wait for finished
     
-        self.stretch_worker = processingWorker(
+        self.stretch_worker = ProcessingWorker(
             mto_results=self.cached_mto_results,
             class_params=self.cached_classification_params,
             stretch_params=self.cached_stretch_params,
