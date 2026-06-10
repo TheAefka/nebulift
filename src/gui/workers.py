@@ -6,7 +6,7 @@ from backend.pipeline import run_mto
 from backend.classify import classify_objects, COMPACT, DIFFUSE
 from backend.stretch import apply_adaptive_stretch
 
-class processingWorker(QThread):
+class ProcessingWorker(QThread):
     finished_success = Signal(np.ndarray, np.ndarray, np.ndarray, dict) 
     finished_error = Signal(str)
     status_update = Signal(str)
@@ -117,16 +117,20 @@ class processingWorker(QThread):
             b_stretch = self.stretch_params.get('background', 5.0)
             c_stretch = self.stretch_params.get('compact', 100.0)
             d_stretch = self.stretch_params.get('diffuse', 10.0)
-            bp = self.stretch_params.get('black_point', 0.001)
+            bp_bg = self.stretch_params.get('blackpoint_background', 0.001)
+            bp_compact = self.stretch_params.get('blackpoint_compact', 0.001)
+            bp_diffuse = self.stretch_params.get('blackpoint_diffuse', 0.001)
 
             stretched_image = apply_adaptive_stretch(
                 image=stretch_input,
                 id_map=self.mto_results['id_map'],
                 class_map=class_map,
-                bg_stretch_factor=b_stretch,
-                diffuse_stretch_factor=d_stretch,
-                compact_stretch_factor=c_stretch,
-                black_point=bp,
+                bg_stretch=b_stretch,
+                diffuse_stretch=d_stretch,
+                compact_stretch=c_stretch,
+                blackpoint_background=bp_bg,
+                blackpoint_compact=bp_compact,
+                blackpoint_diffuse=bp_diffuse,
                 compact_label=COMPACT,
                 diffuse_label=DIFFUSE,
                 mto_struct=self.mto_results['mto_struct'],
