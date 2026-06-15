@@ -17,6 +17,7 @@ class SettingsPanel(QWidget):
     classification_requested = Signal(dict, dict)
     parameters_changed = Signal(dict, dict)
     overlay_toggled = Signal(bool)
+    save_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,6 +31,14 @@ class SettingsPanel(QWidget):
         self._setup_stretch_group()
 
         self.main_layout.addStretch()
+
+        self.save_btn = QPushButton("Save Image")
+        self.save_btn.setEnabled(False)
+        self.save_btn.clicked.connect(self.save_requested.emit)
+
+        self.main_layout.addWidget(self.save_btn)
+
+
 
     def _setup_mtolib_group(self):
         # MTOlib settings

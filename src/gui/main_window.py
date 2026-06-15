@@ -4,7 +4,7 @@ import numpy as np
 
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout,
                                QSplitter, QMessageBox, QFileDialog)
-from PySide6.QtGui import QIcon, QKeySequence
+from PySide6.QtGui import QIcon, QKeySequence, QImage
 
 from gui.widgets.about_dialog import AboutDialog
 from gui.widgets.settings_panel import SettingsPanel
@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
         self.leftPanel.stretch_requested.connect(self.update_stretch)
         self.leftPanel.classification_requested.connect(self.update_classification)
         self.leftPanel.overlay_toggled.connect(self.imagePanel._set_overlay)
+        self.leftPanel.save_requested.connect(self.handle_save_image)
 
         self.imagePanel.pixel_selected_data.connect(self.rightPanel.update_info)
         self.rightPanel.reclassify_requested.connect(self.handle_reclassify)
@@ -139,6 +140,83 @@ class MainWindow(QMainWindow):
                 self.cached_mto_results['object_parameters'][object_id]['source_type'] = new_class
 
         self.update_stretch(self.cached_stretch_params)
+    
+    def handle_save_image(self):
+        if self.cached_stretched_image is None:
+            QMessageBox.information(
+                self,
+                "No image to save",
+                "Please process an image before saving.",
+            )
+            return
+        
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Save Image",
+            "",
+            "FITS (*.fits *.fit);;PNG (*.png);;JPEG (*.jpg *.jpeg);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        if not os.path.splitext(file_path)[1]:
+            filter_to_ext = {
+                "FITS (*.fits *.fit)": ".fits",
+                "PNG (*.png)":         ".png",
+                "JPEG (*.jpg *.jpeg)": ".jpg",
+            }
+            default_ext = filter_to_ext.get(selected_filter, "")
+            file_path += default_ext
+
+        if os.path.exists(file_path):
+            reply = QMessageBox.question(
+                self,
+                "Confirm Overwrite",
+                f"The file '{os.path.basename(file_path)}' already exists. Overwrite it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        
+        extension = os.path.splitext(file_path)[1].lower()
+
+        try:
+            data = np.flipud(self.cached_stretched_image)
+
+            if extension in ['.fits', '.fit']:
+                hdu = fits.PrimaryHDU(np.moveaxis(self.cached_stretched_image, -1, 0) if data.ndim == 3 else data)
+                hdu.writeto(file_path, overwrite=True)
+            else:
+                uint8_data = (np.clip(data, 0.0, 1.0)*255).astype(np.uint8)
+                uint8_data = np.ascontiguousarray(uint8_data)
+
+                if uint8_data.ndim == 2:
+                    # Grayscale image
+                    h, w = uint8_data.shape
+                    qimg = QImage(uint8_data.data, w, h, w, QImage.Format_Grayscale8)
+                elif uint8_data.ndim == 3:
+                    # Coloured image
+                    h, w, c = uint8_data.shape
+                    if c == 3:
+                        qimg = QImage(uint8_data.data, w, h, w * c, QImage.Format_RGB888)
+                    else: # RGBA
+                        qimg = QImage(uint8_data.data, w, h, w * c, QImage.Format_ARGB32)
+                
+                if not qimg.save(file_path):
+                    QMessageBox.critical(
+                        self,
+                        "Error Saving Image",
+                        f"Failed to write to {file_path}",
+                    )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error Saving Image",
+                f"An error occurred while saving the image:\n{str(e)}",
+            )
 
     def _load_original_image(self, file_path):
         try:
@@ -175,6 +253,7 @@ class MainWindow(QMainWindow):
         self.leftPanel.setEnabled(True)
         self.leftPanel.apply_classification_btn.setEnabled(True)
         self.leftPanel.apply_stretch_btn.setEnabled(True)
+        self.leftPanel.save_btn.setEnabled(True)
         self.cached_mto_results = mto_results
         self.cached_stretched_image = stretched_image_array
         self.cached_class_map = class_map

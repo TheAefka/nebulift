@@ -36,4 +36,4 @@ python nebulift.py
 This will launch the GUI where you can load your data and perform adaptive stretching using the max-tree source detection and parameter extraction features.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. Please do note that the MTObjects library does not have a license, so use it at your own risk.
