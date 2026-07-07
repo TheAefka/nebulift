@@ -1,5 +1,5 @@
 # Nebulift
- Nebulift is an adaptive stretching GUI for deep-sky astrophotography. It uses
+Nebulift is an adaptive stretching GUI for deep-sky astrophotography. It uses
 max-tree source detection (MTObjects) to classify sources as compact (stars) or
 diffuse (nebulae, galaxies) and applies an independent stretch function to each
 class, revealing faint structure without saturating stars, and without
@@ -7,6 +7,9 @@ explicit layer separation.
 
 Developed as part of a Bachelor's project in Computing Science at the University of
 Groningen, supervised by Dr M.H.F. Wilkinson and Dr C. Kehl.
+
+![Nebulift screenshot](./assets/screenshotSoftware.png)
+
 
 ## Table of Contents
 - [Processing Pipeline](#processing-pipeline)
