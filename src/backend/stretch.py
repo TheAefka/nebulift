@@ -1,5 +1,5 @@
 import numpy as np
-from backend.classify import DIFFUSE, COMPACT, UNCLASSIFIED
+from backend.classify import DIFFUSE, COMPACT, UNCLASSIFIED, NOISE, label_to_name
 from dataclasses import dataclass
 
 
@@ -23,6 +23,16 @@ def asinh_transformation(x, stretch=1.0, blackpoint=0.0):
 
     return np.arcsinh(stretch * shifted) / denom
 
+def linear_transformation(x, stretch=1.0, blackpoint=0.0):
+    x = np.asarray(x, dtype=np.float32)
+    shifted = np.clip(x - blackpoint, 0.0, None)
+    denom = max(1.0 - blackpoint, np.finfo(np.float32).eps)
+    return np.clip(stretch * shifted / denom, 0.0, 1.0)
+
+STRETCH_FUNCTIONS = {
+    "asinh":  asinh_transformation,
+    "linear": linear_transformation,
+}
 
 
 # def compute_background_mode(bg_pixels: np.ndarray, n_bins: int = 2000) -> float:
@@ -73,6 +83,8 @@ class Object:
     base_level: float
     stretch: float
     blackpoint: float
+    offset: float
+    stretch_fn: object
 
     @property
     def is_diffuse(self):
@@ -88,10 +100,10 @@ class Object:
 
     def evaluate(self, pixels: np.ndarray) -> np.ndarray:
         result = np.full(len(pixels), self.base_level, dtype=np.float32)
-        return result + asinh_transformation(pixels - self.saddle_raw, self.stretch, self.blackpoint)
+        return result + self.stretch_fn(pixels - self.saddle_raw, self.stretch, self.blackpoint) + self.offset
 
-    def evaluate_at(self, raw_value: float) -> float:
-        return float(self.base_level + asinh_transformation(raw_value - self.saddle_raw, self.stretch, self.blackpoint))
+    # def evaluate_at(self, raw_value: float) -> float:
+    #     return float(self.base_level + self.stretch_fn(raw_value - self.saddle_raw, self.stretch, self.blackpoint) + self.offset)
 
 
 class Stretch:
@@ -102,14 +114,10 @@ class Stretch:
         id_map_flat,
         class_map,
         result_lum,
-        bg_stretch,
-        diffuse_stretch,
-        compact_stretch,
-        blackpoint_background,
-        blackpoint_compact,
-        blackpoint_diffuse,
-        bg_offset,
-        # bg_mode=None,
+        stretch_factors,
+        blackpoints,
+        offsets,
+        functions,
         id_to_type_lut=None,
     ):
         self.nodes = nodes
@@ -117,14 +125,10 @@ class Stretch:
         self.id_map_flat = id_map_flat
         self.class_map = class_map
         self.result_lum = result_lum
-        self.bg_stretch = bg_stretch
-        self.diffuse_stretch = diffuse_stretch
-        self.compact_stretch = compact_stretch
-        self.blackpoint_background = blackpoint_background
-        self.blackpoint_compact = blackpoint_compact
-        self.blackpoint_diffuse = blackpoint_diffuse
-        # self.bg_mode = bg_mode
-        self.bg_offset = bg_offset
+        self.stretch_factors = stretch_factors
+        self.blackpoints = blackpoints
+        self.offsets = offsets
+        self.functions = functions
         self.id_to_type_lut = id_to_type_lut
         self._cache: dict[int, Object] = {}
 
@@ -139,22 +143,35 @@ class Stretch:
     def get_stretch(self, label: int) -> float:
         """
         Return the stretch factor for a given classification label
+
+        stretch_factors = {
+            DIFFUSE: diffuse_stretch,
+            COMPACT: compact_stretch,
+            UNCLASSIFIED: bg_stretch,
+            NOISE:   noise_stretch
+        }
         """
-        if label == DIFFUSE:
-            return self.diffuse_stretch
-        if label == COMPACT:
-            return self.compact_stretch
-        return self.bg_stretch
+        return self.stretch_factors.get(label_to_name(label), self.stretch_factors.get("Background", 1.0))
 
     def get_blackpoint(self, label: int) -> float:
         """
         Return the blackpoint for a given classification label
         """
-        if label == DIFFUSE:
-            return self.blackpoint_diffuse
-        if label == COMPACT:
-            return self.blackpoint_compact
-        return self.blackpoint_background
+        return self.blackpoints.get(label_to_name(label), self.blackpoints.get("Background", 0.0))
+    
+    def get_offset(self, label: int) -> float:
+        """
+        Return the offset for a given classification label
+        """
+        return self.offsets.get(label_to_name(label), self.offsets.get("Background", 0.0))
+    
+    def get_stretch_fn(self, label: int):
+        """
+        Return the stretch function for a given classification label
+        """
+        func_name = self.functions.get(label_to_name(label), self.functions.get("Background", asinh_transformation))
+        return STRETCH_FUNCTIONS.get(func_name, asinh_transformation)
+
 
     def compute_object(self, obj_id: int) -> Object:
         """
@@ -197,16 +214,16 @@ class Stretch:
                 saddle_raw = parent_obj.saddle_raw
                 parent_base = parent_obj.base_level
         
-        effective_stretch = stretch
-
         # Create Object instance
         obj = Object(
             id=obj_id,
             label=label,
             saddle_raw=saddle_raw,
             base_level=parent_base,
-            stretch=effective_stretch,
+            stretch=stretch,
             blackpoint=self.get_blackpoint(label),
+            offset=self.get_offset(label),
+            stretch_fn=self.get_stretch_fn(label)
         )
         
         self._cache[obj_id] = obj
@@ -218,15 +235,10 @@ def apply_adaptive_stretch(
     image: np.ndarray,
     id_map: np.ndarray,
     class_map: np.ndarray,
-    bg_stretch: float,
-    diffuse_stretch: float,
-    compact_stretch: float,
-    blackpoint_background: float = 0.001,
-    blackpoint_compact: float = 0.001,
-    blackpoint_diffuse: float = 0.001,
-    bg_offset_fraction: float = 0.5,
-    compact_label: int = COMPACT,
-    diffuse_label: int = DIFFUSE,
+    stretch_factors: dict[int, float],
+    blackpoints: dict[int, float],
+    offsets: dict[int, float],
+    functions: dict[int, object],
     mto_struct=None,
     id_to_type_lut=None,
 ) -> np.ndarray:
@@ -237,6 +249,8 @@ def apply_adaptive_stretch(
     img_data = mto_struct.mt.contents.img.data
     id_map_flat = id_map.ravel()
     object_ids, sorted_positions, start_indices, counts = group_pixels_by_object(id_map_flat)
+
+    fn_background = STRETCH_FUNCTIONS.get(functions["Background"], asinh_transformation)
 
     depth_cache: dict[int, int] = {} 
 
@@ -270,11 +284,11 @@ def apply_adaptive_stretch(
         result_plane = np.empty(len(plane_flat), dtype=np.float32)
 
         # Background pixels
-        result_plane[bg_mask] = asinh_transformation(
-            plane_flat[bg_mask],
-            bg_stretch,
-            blackpoint_background,
-        )
+        result_plane[bg_mask] = fn_background(
+            x=plane_flat[bg_mask],
+            stretch=stretch_factors["Background"],
+            blackpoint=blackpoints["Background"],
+        ) + offsets["Background"]
 
         # Create stretch instance
         stretch = Stretch(
@@ -283,14 +297,10 @@ def apply_adaptive_stretch(
             id_map_flat=id_map_flat,
             class_map=class_map,
             result_lum=result_plane,
-            bg_stretch=bg_stretch,
-            diffuse_stretch=diffuse_stretch,
-            compact_stretch=compact_stretch,
-            blackpoint_background=blackpoint_background,
-            blackpoint_compact=blackpoint_compact,
-            blackpoint_diffuse=blackpoint_diffuse,
-            # bg_mode=bg_mode,
-            bg_offset=0.0,
+            stretch_factors=stretch_factors,
+            blackpoints=blackpoints,
+            offsets=offsets,
+            functions=functions,
             id_to_type_lut=id_to_type_lut,
         )
 
@@ -313,11 +323,12 @@ def apply_adaptive_stretch(
 
         stretched_lum_flat = stretch_scalar_plane(lum_flat)
 
-        image_shifted = np.clip(image_flat - blackpoint_background, 0.0, None)
-        lum_shifted = np.clip(lum_flat - blackpoint_background, 0.0, None)
+        image_shifted = np.clip(image_flat - blackpoints["Background"], 0.0, None)
+        lum_shifted = np.clip(lum_flat - blackpoints["Background"], 0.0, None)
 
         ratio = np.zeros_like(lum_shifted)
-        valid_mask = lum_shifted > np.finfo(np.float32).eps
+        lum_threshold = max(blackpoints["Background"] * 0.01, np.finfo(np.float32).eps * 1000)
+        valid_mask = lum_shifted > lum_threshold
         ratio[valid_mask] = stretched_lum_flat[valid_mask] / lum_shifted[valid_mask]
 
         result_flat = image_shifted * ratio[:, np.newaxis]

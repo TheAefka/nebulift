@@ -1,9 +1,11 @@
 import numpy as np
+import time
 import pandas as pd
 from PySide6.QtCore import QThread, Signal
 
 from backend.pipeline import run_mto
-from backend.classify import classify_objects, COMPACT, DIFFUSE
+from backend.classify import (classify_objects_thresholds, classify_objects_gmm1,
+                              classify_objects_gmm2, COMPACT, DIFFUSE)
 from backend.stretch import apply_adaptive_stretch
 
 class ProcessingWorker(QThread):
@@ -20,7 +22,8 @@ class ProcessingWorker(QThread):
         mto_results = None,
         original_color_image = None,
         class_map = None,
-        reclassify = True
+        reclassify = True,
+        lvq = None,
     ):
         super().__init__()
         self.fits_path = fits_path
@@ -31,8 +34,10 @@ class ProcessingWorker(QThread):
         self.original_color_image = original_color_image
         self.class_map = class_map
         self.reclassify = reclassify
+        self.lvq = lvq
 
     def run(self):
+        t0 = time.time()
         try:
             if self.mto_results is None and self.fits_path is not None and self.mto_params is not None:
                 # MTOlib
@@ -49,7 +54,8 @@ class ProcessingWorker(QThread):
                     soft_bias=self.mto_params.get('soft_bias', 0.0),
                     verbosity=1
                 )
-            
+                print(f"Max-Tree built in {time.time() - t0:.2f} seconds.")
+
             if self.original_color_image is not None:
                 self.mto_results['original_color_image'] = self.original_color_image
             color_image = self.mto_results.get('original_color_image', None)
@@ -61,11 +67,52 @@ class ProcessingWorker(QThread):
             )
 
             # Classification
-            if self.reclassify:
+            t1 = time.time()
+            if self.lvq is not None:
+                # LVQ path, apply correction then reclassify
+                parameters_df = self.mto_results.get('object_parameters_df')
+                if parameters_df is None:
+                    op = self.mto_results.get('object_parameters', {})
+                    parameters_df = pd.DataFrame.from_dict(op, orient='index')
+                    parameters_df.index.name = 'ID'
+
+                predicted = self.lvq.classify(parameters_df)
+
+                id_map = self.mto_results['id_map'].astype(np.int64, copy=False)
+                max_id = int(id_map.max())
+                id_to_type_lut = np.full(max_id + 1, -1, dtype=np.int8)
+                for obj_id, label in predicted.items():
+                    obj_id = int(obj_id)
+                    if 0 <= obj_id <= max_id:
+                        id_to_type_lut[obj_id] = int(label)
+
+                class_map = np.full(id_map.shape, -1, dtype=np.int8)
+                valid_pixels = id_map >= 0
+                class_map[valid_pixels] = id_to_type_lut[id_map[valid_pixels]]
+
+                for obj_id, label in predicted.items():
+                    obj_id = int(obj_id)
+                    if obj_id in self.mto_results.get('object_parameters', {}):
+                        self.mto_results['object_parameters'][obj_id]['source_type'] = int(label)
+
+                self.mto_results['class_map'] = class_map
+                print(f"LVQ classified {len(predicted)} objects: "
+                      f"{(predicted == COMPACT).sum()} compact, "
+                      f"{(predicted == DIFFUSE).sum()} diffuse")
+                print(f"LVQ classification done in {time.time() - t1:.2f} seconds.")
+            elif self.reclassify:
                 self.status_update.emit("Classifying Objects...")
-                r_threshold = self.class_params.get('r_fwhm_threshold', None)
-                a_b_threshold = self.class_params.get('a_b_threshold', None)
-                classified_parameters = classify_objects(image_parameters, r_fwhm_threshold=r_threshold, a_b_threshold=a_b_threshold)
+                classifier = (self.class_params or {}).get('classifier', 'gmm1')
+
+                if classifier == 'threshold':
+                    classified_parameters = classify_objects_thresholds(
+                        image_parameters,
+                        thresholds=self.class_params.get('thresholds', {})
+                    )
+                elif classifier == 'gmm2':
+                    classified_parameters = classify_objects_gmm2(image_parameters)
+                else:
+                    classified_parameters = classify_objects_gmm1(image_parameters)
                 
                 class_counts = classified_parameters['source_type'].value_counts()
                 print("Classification Summary:")
@@ -94,6 +141,11 @@ class ProcessingWorker(QThread):
                 class_map = np.full(id_map.shape, -1, dtype=np.int8)
                 valid_pixels = id_map >= 0
                 class_map[valid_pixels] = id_to_type_lut[id_map[valid_pixels]]
+                self.mto_results['class_map'] = class_map
+                if 'object_parameters_df' in self.mto_results:
+                    del self.mto_results['object_parameters_df']
+                print(f"Classification and class map generation done in {time.time() - t1:.2f} seconds.")
+
             else:
                 if self.class_map is None:
                     raise ValueError("Class map missing. Please reclassify objects.")
@@ -110,42 +162,43 @@ class ProcessingWorker(QThread):
                     for obj_id, params in self.mto_results['object_parameters'].items():
                         if 'source_type' in params:
                             id_to_type_lut[obj_id] = params['source_type']
+                print("Using existing classification and class map.")
 
 
             # Stretch
+            t2 = time.time()
             self.status_update.emit("Applying Adaptative Stretching...")
-            b_stretch = self.stretch_params.get('background', 5.0)
-            c_stretch = self.stretch_params.get('compact', 100.0)
-            d_stretch = self.stretch_params.get('diffuse', 10.0)
-            bp_bg = self.stretch_params.get('blackpoint_background', 0.001)
-            bp_compact = self.stretch_params.get('blackpoint_compact', 0.001)
-            bp_diffuse = self.stretch_params.get('blackpoint_diffuse', 0.001)
+            sp_stretch_factors = self.stretch_params['stretch_factors']
+            sp_blackpoints     = self.stretch_params['blackpoints']
+            sp_offsets         = self.stretch_params['offsets']
+            sp_functions       = self.stretch_params['functions']
 
             stretched_image = apply_adaptive_stretch(
                 image=stretch_input,
                 id_map=self.mto_results['id_map'],
                 class_map=class_map,
-                bg_stretch=b_stretch,
-                diffuse_stretch=d_stretch,
-                compact_stretch=c_stretch,
-                blackpoint_background=bp_bg,
-                blackpoint_compact=bp_compact,
-                blackpoint_diffuse=bp_diffuse,
-                compact_label=COMPACT,
-                diffuse_label=DIFFUSE,
+                stretch_factors=sp_stretch_factors,
+                blackpoints=sp_blackpoints,
+                offsets=sp_offsets,
+                functions=sp_functions,
                 mto_struct=self.mto_results['mto_struct'],
                 id_to_type_lut=id_to_type_lut
             )
+            print(f"Stretching done in {time.time() - t2:.2f} seconds.")
 
             if self.reclassify:
                 if 'ID' in classified_parameters.columns:
-                    df_indexed = classified_parameters.set_index('ID')
-                    self.mto_results['object_parameters'] = df_indexed.to_dict(orient='index')
+                    type_series = classified_parameters.set_index('ID')['source_type']
+                    full_df = image_parameters.set_index('ID').copy()
+                    full_df['source_type'] = type_series
+                    full_df.index = full_df.index.astype(int)
+                    self.mto_results['object_parameters'] = full_df.to_dict(orient='index')
                 else:
                     self.mto_results['object_parameters'] = {}
                 self.mto_results['class_map'] = class_map
 
             self.finished_success.emit(stretched_image, class_map, id_map, self.mto_results)
+            print(f"Total processing time: {time.time() - t0:.2f} seconds.\n")
 
         except Exception as e:
             import traceback

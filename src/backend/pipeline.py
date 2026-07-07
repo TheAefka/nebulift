@@ -19,7 +19,7 @@ def run_mto(
         move_factor: float = 0.5,
         soft_bias: float = 0.0,
         verbosity: int = 1,
-        write_image: bool = False,
+        write_image: bool = True,
         write_parameters: bool = False,
     ):
 

@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout)
 from PySide6.QtCore import Qt, Slot, Signal
-from backend.classify import DIFFUSE, COMPACT
+from backend.classify import DIFFUSE, COMPACT, NOISE
 
 
 class ObjectInfoPanel(QWidget):
@@ -22,23 +22,33 @@ class ObjectInfoPanel(QWidget):
         self.layout.addWidget(QLabel("<b>Legend:</b>"))
         self.layout.addLayout(self._create_legend_item("red", "Compact"))
         self.layout.addLayout(self._create_legend_item("green", "Diffuse"))
+        self.layout.addLayout(self._create_legend_item("blue", "Noise"))
+        self.layout.addLayout(self._create_legend_item("gray", "Unclassified"))
         self.layout.addLayout(self._create_legend_item("yellow", "Selected Object"))
         self.layout.addLayout(self._create_legend_item("cyan", "Parent Object"))
         self.layout.addLayout(self._create_legend_item("purple", "Direct Parent"))
 
 
         self.btn_layout = QHBoxLayout()
-        self.btn_compact = QPushButton("Mark Compact")
-        self.btn_diffuse = QPushButton("Mark Diffuse")
+        self.btn_compact = QPushButton("Mark (C)ompact")
+        self.btn_diffuse = QPushButton("Mark (D)iffuse")
+        self.btn_noise   = QPushButton("Mark (N)oise")
         self.btn_layout.addWidget(self.btn_compact)
         self.btn_layout.addWidget(self.btn_diffuse)
+        self.btn_layout.addWidget(self.btn_noise)
         self.layout.addLayout(self.btn_layout)
 
         self.btn_compact.clicked.connect(lambda: self.emit_classification(COMPACT))
         self.btn_diffuse.clicked.connect(lambda: self.emit_classification(DIFFUSE))
+        self.btn_noise.clicked.connect(lambda: self.emit_classification(NOISE))
+
+        self.btn_compact.setShortcut("C")
+        self.btn_diffuse.setShortcut("D")
+        self.btn_noise.setShortcut("N")
         
         self.btn_compact.setEnabled(False)
         self.btn_diffuse.setEnabled(False)
+        self.btn_noise.setEnabled(False)
 
 
     def _create_legend_item(self, color, label):
@@ -57,6 +67,7 @@ class ObjectInfoPanel(QWidget):
             self.current_object_id = None
             self.btn_compact.setEnabled(False)
             self.btn_diffuse.setEnabled(False)
+            self.btn_noise.setEnabled(False)
             return
 
         object_id = object_info.get("obj_id", None)
@@ -68,6 +79,7 @@ class ObjectInfoPanel(QWidget):
             DIFFUSE: "Diffuse",
             COMPACT: "Compact",
             -1: "Unclassified",
+            NOISE: "Noise",
             None: "Unclassified",
         }
         classification_str = classification_labels.get(raw_classification, str(raw_classification))
@@ -101,6 +113,7 @@ class ObjectInfoPanel(QWidget):
         self.current_object_id = object_id
         self.btn_compact.setEnabled(True)
         self.btn_diffuse.setEnabled(True)
+        self.btn_noise.setEnabled(True)
 
 
     def emit_classification(self, classification):

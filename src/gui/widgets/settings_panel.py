@@ -1,12 +1,19 @@
 import os
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QCheckBox,
-                               QGroupBox, QFormLayout, QDoubleSpinBox,
-                               QHBoxLayout, QLabel, QComboBox,
-                               QSlider, QSpinBox)
+                               QFormLayout, QDoubleSpinBox, QHBoxLayout, QLabel,
+                               QComboBox, QSlider, QSpinBox)
 from PySide6.QtCore import Qt, Signal, QSignalBlocker
 
 from gui.widgets.collapse import Collapse
+
+THRESHOLD_CATEGORIES = ["R_fwhm", "A/B"]
+STRETCH_CATEGORIES = [
+    "Background",
+    "Compact",
+    "Diffuse",
+    "Noise"
+]
 
 
 class SettingsPanel(QWidget):
@@ -40,94 +47,140 @@ class SettingsPanel(QWidget):
 
 
 
+
+    ###
+    #
+    # MTOlib settings panel
+    #
+    ###
+
     def _setup_mtolib_group(self):
-        # MTOlib settings
+        """
+        Setup the MTOlib parameters in the settings panel. Default values are
+        the ones used in pipeline.py and MTOlib example script.
+        """
         mtolibGroup = Collapse("MTOlib Settings")
         mtolibLayout = QFormLayout()
 
         self.mto_fits_path = QPushButton("Open")
+        mtolibLayout.addRow("Input FITS", self.mto_fits_path)
 
-        self.mto_alpha = QDoubleSpinBox(decimals=6, singleStep=1e-6)
-        self.mto_alpha.setRange(0.0, 1.0)
-        self.mto_alpha.setValue(1e-6)
+        self.mto_alpha = QDoubleSpinBox(decimals=6, singleStep=1e-6, value=1e-6,
+                                        minimum=0.0, maximum=1.0)
+        mtolibLayout.addRow("Alpha", self.mto_alpha)
         
         self.mto_bg_mean_checkbox = QCheckBox()
-        self.mto_bg_mean = QDoubleSpinBox(decimals=6, singleStep=1e-6)
-        self.mto_bg_mean.setRange(-1000000.0, 1000000.0)
-        self.mto_bg_mean.setEnabled(False) # Disable input when checkbox unchecked 
-        
-        self.mto_bg_variance = QDoubleSpinBox(decimals=6, singleStep=1e-6)
-        self.mto_bg_variance.setRange(-1.0, 1000000.0)
-        self.mto_bg_variance.setValue(-1.0)
-        
-        self.mto_gain = QDoubleSpinBox(decimals=6, singleStep=1e-6)
-        self.mto_gain.setRange(-1.0, 1000000.0)
-        self.mto_gain.setValue(-1.0)
-
-        self.mto_min_distance = QDoubleSpinBox(decimals=6, singleStep=1e-6)
-        
-        self.mto_move_factor = QDoubleSpinBox(decimals=6, singleStep=1e-6)
-        self.mto_move_factor.setValue(0.5)
-        
-        self.mto_soft_bias = QDoubleSpinBox(decimals=6, value=0.0, singleStep=1e-6)
-
-        self.mto_build_btn = QPushButton("(Re)build max-tree")
-        self.mto_build_btn.setEnabled(False) # Disabled until fits path provided
-
-
-        mtolibLayout.addRow("Input FITS", self.mto_fits_path)
-        mtolibLayout.addRow("Alpha", self.mto_alpha)
+        self.mto_bg_mean = QDoubleSpinBox(decimals=6, singleStep=1e-6,
+                                          minimum=-1000000.0, maximum=1000000.0)
+        self.mto_bg_mean.setEnabled(False) # Disable input when unchecked 
         mtolibLayout.addRow("Custom background mean?", self.mto_bg_mean_checkbox)
         mtolibLayout.addRow("Background mean", self.mto_bg_mean)
+        
+        self.mto_bg_variance = QDoubleSpinBox(decimals=6, singleStep=1e-6,
+                                              minimum=-1.0, maximum=1000000.0,
+                                              value=-1.0)
         mtolibLayout.addRow("Background variance", self.mto_bg_variance)
+        
+        self.mto_gain = QDoubleSpinBox(decimals=6, singleStep=1e-6, minimum=-1.0,
+                                       maximum=1000000.0, value=-1.0)
         mtolibLayout.addRow("Gain", self.mto_gain)
+
+        self.mto_min_distance = QDoubleSpinBox(decimals=6, singleStep=1e-6)
         mtolibLayout.addRow("Minimum distance", self.mto_min_distance)
+        
+        self.mto_move_factor = QDoubleSpinBox(decimals=6, singleStep=1e-6, value=0.5)
         mtolibLayout.addRow("Move factor", self.mto_move_factor)
+
+        self.mto_soft_bias = QDoubleSpinBox(decimals=6, value=0.0, singleStep=1e-6)
         mtolibLayout.addRow("Soft bias", self.mto_soft_bias)
+
+        self.mto_build_btn = QPushButton("Build max-tree")
+        self.mto_build_btn.setEnabled(False) # Disabled until fits path provided
         mtolibLayout.addRow("Run MTObjects", self.mto_build_btn)
         
-        # mtolibGroup.setLayout(mtolibLayout)
-        # self.main_layout.addWidget(mtolibGroup)
         mtolibGroup.content_layout.addLayout(mtolibLayout)
         self.main_layout.addWidget(mtolibGroup)
 
+        # Connect signals
         self.mto_bg_mean_checkbox.toggled.connect(self.mto_bg_mean.setEnabled)
         self.mto_fits_path.clicked.connect(self.open_requested.emit)
         self.mto_build_btn.clicked.connect(self._emit_process_request)
 
 
     def update_fits_display(self, file_path):
+        """
+        When a file path is provided, update the button text and enable the
+        build button.
+        """
         if file_path:
             self.current_fits_path = file_path
             self.mto_build_btn.setEnabled(True)
             self.mto_fits_path.setText(os.path.basename(file_path))
 
     
+
+
+    ###
+    #
+    # Classification settings panel
+    #
+    ###
+
+
     def _setup_classification_group(self):
-        classifGroup = Collapse("Classification Settings", toggled=False)
+        """
+        Setup the classification settings in the settings panel.
+        """
+        classifGroup = Collapse("Classification Settings")
         classifLayout = QFormLayout()
 
         self.classifControls = {}
 
-        categories = ["R_fwhm", "A/B"]
+        # Classifier selector dropdown
+        self.classifier_combo = QComboBox()
+        self.classifier_combo.addItems([
+            "Thresholds",
+            "GMM (log(R_fwhm), log(R_e), roundness)",
+            "GMM (profile, concentration)",
+            "LVQ",
+        ])
+        self.classifier_combo.currentIndexChanged.connect(self._on_classifier_changed)
+        classifLayout.addRow("Classifier", self.classifier_combo)
 
-        for cat in categories:
+        # Threshold controls
+        for cat in THRESHOLD_CATEGORIES:
             check, spin, row_ui = self._create_classification_row(cat)
             classifLayout.addRow(row_ui)
+            self.classifControls[cat] = {"check": check, "spin": spin, "row": row_ui}
 
-            self.classifControls[cat] = {"check": check, "spin": spin}        
+        # LVQ hint label (only shown for LVQ)
+        self.lvq_hint_label = QLabel("Label at least one object of each class to train the LVQ classifier.")
+        self.lvq_hint_label.setWordWrap(True)
+        self.lvq_hint_label.setVisible(False)
+        classifLayout.addRow(self.lvq_hint_label)
 
         self.showClassificationOverlay = QCheckBox("Show Overlay?")
         self.showClassificationOverlay.toggled.connect(self.overlay_toggled)
         classifLayout.addRow(self.showClassificationOverlay)
-        
+
         self.apply_classification_btn = QPushButton("Apply Classification")
         self.apply_classification_btn.setEnabled(False)
-        self.apply_classification_btn.clicked.connect(self._emit_classification_request) 
+        self.apply_classification_btn.clicked.connect(self._emit_classification_request)
         classifLayout.addRow(self.apply_classification_btn)
-        
+
         classifGroup.content_layout.addLayout(classifLayout)
         self.main_layout.addWidget(classifGroup)
+
+    def _on_classifier_changed(self, index):
+        is_threshold = index == 0
+        is_lvq = index == 3
+        for cat in THRESHOLD_CATEGORIES:
+            self.classifControls[cat]["row"].setVisible(is_threshold)
+        self.lvq_hint_label.setVisible(is_lvq)
+
+    def selected_classifier(self) -> str:
+        """Return a stable key for the selected classifier."""
+        return ["threshold", "gmm1", "gmm2", "lvq"][self.classifier_combo.currentIndex()]
 
 
     def _create_classification_row(self, labelText):
@@ -138,10 +191,10 @@ class SettingsPanel(QWidget):
 
         checkbox = QCheckBox(labelText)
         checkbox.setFixedWidth(80)
-        spinbox = QDoubleSpinBox(decimals=4)
-        spinbox.setRange(0.0, 100.0)
-
+        
+        spinbox = QDoubleSpinBox(decimals=4, minimum=0.0, maximum=100.0)
         spinbox.setEnabled(False)
+        
         checkbox.toggled.connect(spinbox.setEnabled)
 
         rowLayout.addWidget(checkbox)
@@ -150,25 +203,51 @@ class SettingsPanel(QWidget):
         return checkbox, spinbox, rowWidget
 
 
+
+
+    ###
+    #
+    # Stretch settings panel
+    #
+    ###
+
     def _setup_stretch_group(self):
         stretchGroup = Collapse("Stretch Settings")
         stretchLayout = QFormLayout()
 
-        self.stretchFuncComboBox = QComboBox()
-        self.stretchFuncComboBox.addItems(["asinh"])
-        stretchLayout.addRow("Stretch Function", self.stretchFuncComboBox)
 
-        categories = ["Background", "Compact", "Diffuse"]
+        self.stretchControls = {}
 
-        for cat in categories:
-            check, spin, row_ui = self._create_stretch_row(cat)
-            stretchLayout.addRow(row_ui)
+        for name in STRETCH_CATEGORIES:
+            sectionGroup = Collapse(name, toggled=False)
+            sectionLayout = QFormLayout()
 
-            bp_slider, bp_spin, bp_row = self._create_stretch_row("Blackpoint", is_float=True, min_val=0.0, max_val=0.2, decimals=4)
-            stretchLayout.addRow(bp_row)
+            # Stretch function dropdown
+            stretchFuncComboBox = QComboBox()
+            stretchFuncComboBox.addItems(["asinh", "linear"])
+            sectionLayout.addRow("Stretch Function", stretchFuncComboBox)
 
-            self.classifControls[cat] = {"check": check, "spin": spin}
-            self.classifControls["Blackpoint_" + cat] = {"slider": bp_slider, "spin": bp_spin}
+            # Stretch factor slider
+            stretch_slider, stretch_spin, stretch_row = self._create_stretch_row("Stretch Factor", is_float=True, min_val=0.0, max_val=1000.0, decimals=2)
+            sectionLayout.addRow(stretch_row)
+
+            # Black Point slider
+            bp_slider, bp_spin, bp_row = self._create_stretch_row("Black Point", is_float=True, min_val=0.0, max_val=0.2, decimals=4)
+            sectionLayout.addRow(bp_row)
+
+            # Offset slider
+            offset_slider, offset_spin, offset_row = self._create_stretch_row("Offset", is_float=True, min_val=-1.0, max_val=1.0, decimals=4)
+            sectionLayout.addRow(offset_row)
+
+            self.stretchControls[name] = {
+                "function": stretchFuncComboBox,
+                "stretch_factor": stretch_spin,
+                "blackpoint": bp_spin,
+                "offset": offset_spin
+            }
+
+            sectionGroup.content_layout.addLayout(sectionLayout)
+            stretchLayout.addWidget(sectionGroup)
 
         self.apply_stretch_btn = QPushButton("Apply Stretch")
         self.apply_stretch_btn.setEnabled(False)
@@ -186,7 +265,7 @@ class SettingsPanel(QWidget):
         rowLayout.setContentsMargins(0, 0, 0, 0)
 
         label = QLabel(labelText)
-        label.setFixedWidth(80)
+        label.setFixedWidth(85)
 
         slider = QSlider(Qt.Horizontal)
         
@@ -222,6 +301,47 @@ class SettingsPanel(QWidget):
 
         return slider, spinbox, rowWidget
 
+
+
+
+    ###
+    #
+    # Signals
+    #
+    ###
+
+
+    def collect_stretch_parameters(self) -> dict:
+        sp = {
+            "stretch_factors": {},
+            "blackpoints": {},
+            "offsets": {},
+            "functions": {}
+        }
+        for name in STRETCH_CATEGORIES:
+            ctrl = self.stretchControls[name]
+            sp["stretch_factors"][name] = ctrl["stretch_factor"].value()
+            sp["blackpoints"][name] = ctrl["blackpoint"].value()
+            sp["offsets"][name] = ctrl["offset"].value()
+            sp["functions"][name] = ctrl["function"].currentText()
+        return sp
+
+
+    def collect_classification_parameters(self):
+        thresholds = {}
+        for cat in THRESHOLD_CATEGORIES:
+            if self.classifControls[cat]["check"].isChecked():
+                thresholds[cat] = self.classifControls[cat]["spin"].value()
+            else:
+                thresholds[cat] = None
+        classif_params = {
+            'classifier': self.selected_classifier(),
+            'thresholds': thresholds
+        }
+        return classif_params
+
+
+
     def _emit_process_request(self):
         if not hasattr(self, 'current_fits_path'):
             return
@@ -237,77 +357,19 @@ class SettingsPanel(QWidget):
             'soft_bias': self.mto_soft_bias.value(),
         }
 
-        # Classification settings
-        classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_fwhm"]["spin"].value(),
-            'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
-        }
-
-        # Stretch settings
-        stretch_params = {
-            'background': self.classifControls["Background"]["spin"].value(),
-            'compact': self.classifControls["Compact"]["spin"].value(),
-            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
-            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
-            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
-        }
-
         self.process_requested.emit(
             self.current_fits_path, 
             mto_params, 
-            classif_params, 
-            stretch_params
+            self.collect_classification_parameters(), 
+            self.collect_stretch_parameters()
         )
     
     def _emit_stretch_request(self):
-        stretch_params = {
-            'background': self.classifControls["Background"]["spin"].value(),
-            'compact': self.classifControls["Compact"]["spin"].value(),
-            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
-            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
-            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
-        }
-        self.stretch_requested.emit(stretch_params)
+        self.stretch_requested.emit(self.collect_stretch_parameters())
 
-    # def _connect_signals(self):
-    #     for cat in self.classifControls:
-    #         controls = self.classifControls[cat]
-    #         if "spin" in controls:
-    #             controls["spin"].valueChanged.connect(self._on_parameter_changed)
-    #         if "slider" in controls:
-    #             controls["slider"].valueChanged.connect(self._on_parameter_changed)
-
-    def _on_parameter_changed(self):
-        if not hasattr(self, 'current_fits_path'):
-            return
-
-        classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_fwhm"]["spin"].value(),
-            'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
-        }
-        stretch_params = {
-            'background': self.classifControls["Background"]["spin"].value(),
-            'compact': self.classifControls["Compact"]["spin"].value(),
-            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
-            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
-            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
-        }
-        self.parameters_changed.emit(classif_params, stretch_params)
 
     def _emit_classification_request(self):
-        classif_params = {
-            'r_fwhm_threshold': self.classifControls["R_fwhm"]["spin"].value(),
-            'a_b_threshold': self.classifControls["A/B"]["spin"].value(),
-        }
-        stretch_params = {
-            'background': self.classifControls["Background"]["spin"].value(),
-            'compact': self.classifControls["Compact"]["spin"].value(),
-            'diffuse': self.classifControls["Diffuse"]["spin"].value(),
-            'blackpoint_background': self.classifControls["Blackpoint_Background"]["spin"].value(),
-            'blackpoint_compact': self.classifControls["Blackpoint_Compact"]["spin"].value(),
-            'blackpoint_diffuse': self.classifControls["Blackpoint_Diffuse"]["spin"].value(),
-        }
-        self.classification_requested.emit(classif_params, stretch_params)
+        self.classification_requested.emit(
+            self.collect_classification_parameters(),
+            self.collect_stretch_parameters()
+        )
