@@ -1,0 +1,147 @@
+# Package the application for windows (.exe) and linux (.AppImage)
+
+name: Build and release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+ 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+ 
+      - name: Compile C libraries
+        shell: bash
+        run: |
+          mkdir -p src/mtolib/lib
+          cd src/mtolib/src
+          gcc -O3 -shared -include main.h        -o ../lib/mt_objects.so        mt_objects.c mt_heap.c mt_node_test_4.c
+          gcc -O3 -shared -include main.h        -o ../lib/maxtree.so           maxtree.c mt_stack.c mt_heap.c
+          gcc -O3 -shared -include main_double.h -o ../lib/mt_objects_double.so mt_objects.c mt_heap.c mt_node_test_4.c
+          gcc -O3 -shared -include main_double.h -o ../lib/maxtree_double.so    maxtree.c mt_stack.c mt_heap.c
+ 
+      - name: Build exe with PyInstaller
+        run: >
+          pyinstaller nebulift.py
+          --name Nebulift
+          --onefile
+          --windowed
+          --noconfirm
+          --icon src/gui/resources/icons/logo.png
+          --add-data "src/mtolib/lib;mtolib/lib"
+          --add-data "src/gui/resources;gui/resources"
+ 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nebulift-windows
+          path: dist/Nebulift.exe
+ 
+  appimage:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+ 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 libegl1 libxkbcommon-x11-0
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+ 
+      - name: Compile C libraries
+        run: |
+          mkdir -p src/mtolib/lib
+          cd src/mtolib/src
+          gcc -O3 -shared -fPIC -include main.h        -o ../lib/mt_objects.so        mt_objects.c mt_heap.c mt_node_test_4.c
+          gcc -O3 -shared -fPIC -include main.h        -o ../lib/maxtree.so           maxtree.c mt_stack.c mt_heap.c
+          gcc -O3 -shared -fPIC -include main_double.h -o ../lib/mt_objects_double.so mt_objects.c mt_heap.c mt_node_test_4.c
+          gcc -O3 -shared -fPIC -include main_double.h -o ../lib/maxtree_double.so    maxtree.c mt_stack.c mt_heap.c
+ 
+      - name: Build with PyInstaller
+        run: >
+          pyinstaller nebulift.py
+          --name Nebulift
+          --onedir
+          --windowed
+          --noconfirm
+          --add-data "src/mtolib/lib:mtolib/lib"
+          --add-data "src/gui/resources:gui/resources"
+ 
+      - name: Assemble AppDir
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp -r dist/Nebulift/* AppDir/usr/bin/
+ 
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/Nebulift" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+ 
+          # Desktop entry
+          cat > AppDir/nebulift.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Nebulift
+          Exec=Nebulift
+          Icon=nebulift
+          Categories=Graphics;Astronomy;
+          Comment=Astronomical objects extraction and stretching
+          EOF
+ 
+          # Icon (root-level, matching Icon= name)
+          cp src/gui/resources/icons/logo.png AppDir/nebulift.png
+ 
+      - name: Build AppImage
+        run: |
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir Nebulift-x86_64.AppImage
+ 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nebulift-appimage
+          path: Nebulift-x86_64.AppImage
+ 
+  # release:
+  #   if: startsWith(github.ref, 'refs/tags/')
+  #   needs: [windows, appimage]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         merge-multiple: true
+  #         path: dist
+ 
+  #     - uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: |
+  #           dist/Nebulift.exe
+  #           dist/Nebulift-x86_64.AppImage
+  #         generate_release_notes: true
+
