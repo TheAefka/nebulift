@@ -1,6 +1,7 @@
 from argparse import Namespace
 from ctypes import c_float, c_double
 import numpy as np
+import os
 
 import mtolib.main as mto
 from mtolib.io_mto import read_fits_file
@@ -25,6 +26,13 @@ def run_mto(
 
     # Get the input image and parameters
     image = read_fits_file(fits_path)
+
+    in_dir = os.path.dirname(os.path.abspath(fits_path))
+    if not os.path.isabs(out_path):
+        out_path = os.path.join(in_dir, out_path)
+    if not os.path.isabs(param_out_path):
+        param_out_path = os.path.join(in_dir, param_out_path)
+
     params = Namespace(
         filename=fits_path,
         out=out_path,

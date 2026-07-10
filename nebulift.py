@@ -7,7 +7,6 @@ else:
     SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
 
 sys.path.insert(0, SRC)
-os.chdir(SRC)
 
 from main import main
 

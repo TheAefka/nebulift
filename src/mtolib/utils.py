@@ -5,11 +5,16 @@ from astropy.stats import gaussian_fwhm_to_sigma
 import argparse
 import ctypes
 import os
+import sys
 
 
 def load_clib(filename):
     """Load a compiled mtolib C library"""
-    return ctypes.CDLL(os.path.abspath(os.path.join("mtolib", "lib", filename)))
+    if getattr(sys, "frozen", False):  # Running in PyInstaller bundle
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return ctypes.CDLL(os.path.abspath(os.path.join(base, "mtolib", "lib", filename)))
 
 
 def time_function(function, parameters, verbosity, task_string):
