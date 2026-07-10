@@ -3,6 +3,13 @@
 import time
 from astropy.stats import gaussian_fwhm_to_sigma
 import argparse
+import ctypes
+import os
+
+
+def load_clib(filename):
+    """Load a compiled mtolib C library"""
+    return ctypes.CDLL(os.path.abspath(os.path.join("mtolib", "lib", filename)))
 
 
 def time_function(function, parameters, verbosity, task_string):

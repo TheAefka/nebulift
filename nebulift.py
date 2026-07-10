@@ -1,7 +1,11 @@
 import os
 import sys
 
-SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+if getattr(sys, "frozen", False): # Running in PyInstaller bundle
+    SRC = sys._MEIPASS
+else:
+    SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+
 sys.path.insert(0, SRC)
 os.chdir(SRC)
 

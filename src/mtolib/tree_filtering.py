@@ -5,11 +5,11 @@ import numpy as np
 
 import mtolib.significance_tests as mt_sig
 from mtolib import _ctype_classes as mt_class
-from mtolib.utils import time_function
+from mtolib.utils import time_function, load_clib
 
 # Get access to the compiled C maxtree library
 # Defaults to float version
-mto_lib = ct.CDLL('mtolib/lib/mt_objects.so')
+mto_lib = load_clib('mt_objects.so')
 
 
 def init_double_filtering(params):
@@ -18,7 +18,7 @@ def init_double_filtering(params):
 
     # If the image is 64 bit, use the double version of the library
     if params.d_type == ct.c_double:
-        mto_lib = ct.CDLL('mtolib/lib/mt_objects_double.so')
+        mto_lib = load_clib('mt_objects_double.so')
 
 
 def up_tree():
@@ -39,7 +39,7 @@ def get_c_significant_nodes(lib_name):
     """Get a significant nodes function from a compiled library."""
 
     # Get access to a compiled C mt_object library
-    c_lib = ct.CDLL(lib_name)
+    c_lib = load_clib(lib_name)
 
     return mt_class.SIGNODES_TYPE(c_lib.significant_nodes)
 

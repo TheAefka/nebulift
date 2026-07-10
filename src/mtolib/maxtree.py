@@ -5,6 +5,7 @@ import numpy.ctypeslib as npct
 import numpy as np
 
 from mtolib import _ctype_classes as mt_class
+from mtolib.utils import load_clib
 
 
 class MaxTree:
@@ -44,9 +45,9 @@ class OriginalMaxTree(MaxTree):
 
         # Get access to the compiled C maxtree library
         if params.d_type == ct.c_double:
-            self.mt_lib = ct.CDLL('mtolib/lib/maxtree_double.so')
+            self.mt_lib = load_clib('maxtree_double.so')
         else:
-            self.mt_lib = ct.CDLL('mtolib/lib/maxtree.so')
+            self.mt_lib = load_clib('maxtree.so')
 
 
         # Create image object
