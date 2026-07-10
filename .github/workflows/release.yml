@@ -139,20 +139,20 @@ jobs:
           name: Nebulift-appimage
           path: Nebulift-x86_64.AppImage
  
-  # release:
-  #   if: startsWith(github.ref, 'refs/tags/')
-  #   needs: [windows, appimage]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         merge-multiple: true
-  #         path: dist
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [windows, appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
  
-  #     - uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: |
-  #           dist/Nebulift.exe
-  #           dist/Nebulift-x86_64.AppImage
-  #         generate_release_notes: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Nebulift.exe
+            dist/Nebulift-x86_64.AppImage
+          generate_release_notes: true
 
